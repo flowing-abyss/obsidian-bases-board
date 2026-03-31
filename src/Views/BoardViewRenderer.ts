@@ -52,6 +52,7 @@ export class BoardViewRenderer extends BasesView {
 	render(): void {
 		const options = this.extractOptions();
 		const boardData = this.extractBoardData(options);
+		boardData.collapsedSubGroups = options.collapsedSubGroups || [];
 
 		const callbacks: BoardViewCallbacks = {
 			onCardDrop: (...args) => {
@@ -67,6 +68,8 @@ export class BoardViewRenderer extends BasesView {
 			onNewNoteClick: (g, s) => this.handleNewNoteClick(g, s),
 			onRenameGroup: (g, l) => this.openRenameModal(g, l, false),
 			onRenameSubGroup: (s, l) => this.openRenameModal(s, l, true),
+			onToggleCollapsedSubGroup: (id, collapsed) =>
+				this.toggleCollapsedSubGroup(id, collapsed),
 		};
 		this.board.render(boardData, callbacks);
 		this.updateSlContainer();
@@ -135,6 +138,18 @@ export class BoardViewRenderer extends BasesView {
 		const currentHidden = (this.config.get(BoardOptionKeys.HIDDEN_GROUPS) as string[]) || [];
 		if (!currentHidden.includes(groupValue)) {
 			this.config.set(BoardOptionKeys.HIDDEN_GROUPS, [...currentHidden, groupValue]);
+		}
+	}
+
+	private toggleCollapsedSubGroup(subGroupId: string, collapsed: boolean) {
+		const current = (this.config.get(BoardOptionKeys.COLLAPSED_SUB_GROUPS) as string[]) || [];
+		if (collapsed && !current.includes(subGroupId)) {
+			this.config.set(BoardOptionKeys.COLLAPSED_SUB_GROUPS, [...current, subGroupId]);
+		} else if (!collapsed) {
+			this.config.set(
+				BoardOptionKeys.COLLAPSED_SUB_GROUPS,
+				current.filter((id) => id !== subGroupId),
+			);
 		}
 	}
 

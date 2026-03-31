@@ -36,6 +36,7 @@ export interface BoardViewData {
 	cardOptions: BoardOptions;
 	cardProperties: string[];
 	columnColors: Record<string, string>;
+	collapsedSubGroups: string[];
 }
 
 export interface BoardViewCallbacks {
@@ -54,6 +55,7 @@ export interface BoardViewCallbacks {
 	onNewNoteClick: (groupValue: unknown, subGroupValue?: unknown) => void;
 	onRenameGroup: (groupValue: string, currentLabel: string) => void;
 	onRenameSubGroup: (subGroupValue: string, currentLabel: string) => void;
+	onToggleCollapsedSubGroup: (subGroupId: string, collapsed: boolean) => void;
 }
 
 const COLUMN_COLORS = ColorManager.getColorNames().map(
@@ -223,6 +225,10 @@ export class BoardView {
 	) {
 		const rowWrapper = container.createDiv('board-row-wrapper');
 
+		if (row && this.data.collapsedSubGroups.includes(row.id)) {
+			rowWrapper.classList.add('collapsed');
+		}
+
 		if (row) {
 			const rowHeader = rowWrapper.createDiv('board-row-header-bar');
 			const collapseIcon = rowHeader.createSpan('collapse-icon');
@@ -316,6 +322,10 @@ export class BoardView {
 
 			rowHeader.addEventListener('click', () => {
 				rowWrapper.classList.toggle('collapsed');
+				callbacks.onToggleCollapsedSubGroup(
+					row.id,
+					rowWrapper.classList.contains('collapsed'),
+				);
 			});
 		}
 

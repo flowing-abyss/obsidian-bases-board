@@ -33,6 +33,7 @@ export class BoardViewDataBuilder {
 			cardOptions: options,
 			cardProperties: this.config.getOrder(),
 			columnColors: Services.settings.columnColors || {},
+			collapsedSubGroups: [],
 		};
 
 		// Use this.data.data (flat list of entries)

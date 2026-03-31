@@ -18,6 +18,7 @@ export const BoardOptionKeys = {
 	OPEN_IN_SIDE_VIEW: 'openInSideView',
 	HIDDEN_GROUPS: 'hiddenGroups',
 	HIDDEN_SUB_GROUPS: 'hiddenSubGroups',
+	COLLAPSED_SUB_GROUPS: 'collapsedSubGroups',
 	HIDE_IMAGE_PLACEHOLDER: 'hideImagePlaceholder',
 	NEW_NOTE_FOLDER: 'newNoteFolder',
 	NEW_NOTE_TEMPLATE: 'newNoteTemplate',
@@ -48,6 +49,7 @@ export interface BoardOptions {
 	openInSideView?: boolean;
 	hiddenGroups?: string[];
 	hiddenSubGroups?: string[];
+	collapsedSubGroups?: string[];
 	hideImagePlaceholder?: boolean;
 	newNoteFolder?: string;
 	newNoteTemplate?: string;
@@ -136,6 +138,8 @@ export class OptionsExtractor {
 		options.hiddenGroups = (this.config.get(BoardOptionKeys.HIDDEN_GROUPS) as string[]) || [];
 		options.hiddenSubGroups =
 			(this.config.get(BoardOptionKeys.HIDDEN_SUB_GROUPS) as string[]) || [];
+		options.collapsedSubGroups =
+			(this.config.get(BoardOptionKeys.COLLAPSED_SUB_GROUPS) as string[]) || [];
 		options.hideImagePlaceholder =
 			(this.config.get(BoardOptionKeys.HIDE_IMAGE_PLACEHOLDER) as boolean) || false;
 		options.newNoteFolder =
