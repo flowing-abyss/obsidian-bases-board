@@ -75,5 +75,3 @@ npm run lint      # ESLint
 npm run format    # Prettier
 npm test          # Vitest
 ```
-
-See [CLAUDE.md](CLAUDE.md) for the full release process.
