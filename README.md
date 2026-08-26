@@ -1,77 +1,73 @@
 # Bases Board
 
-An interactive board view for Obsidian Bases. Visualize your notes as a Kanban or Gallery, with grouping for columns and rows, drag-and-drop, and deep customization per base.
+[![Available in Obsidian](https://img.shields.io/badge/Available%20in%20Obsidian-7C3AED?logo=obsidian&logoColor=white&style=flat-square)](https://obsidian.md/plugins?id=bases-board)
+[![Release](https://github.com/flowing-abyss/obsidian-bases-board/actions/workflows/release.yml/badge.svg)](https://github.com/flowing-abyss/obsidian-bases-board/actions/workflows/release.yml)
+[![Downloads](https://img.shields.io/github/downloads/flowing-abyss/obsidian-bases-board/total?style=flat-square&label=downloads&color=blue)](https://github.com/flowing-abyss/obsidian-bases-board/releases)
 
-## Features
+Bases Board adds Kanban and gallery views to Obsidian Bases. It groups notes into
+columns and rows, updates their properties when you move a card, and keeps layout and
+appearance options with each base.
 
-### Board layout
+## Board layouts
 
-- **Kanban** — group notes into columns by a property value
-- **Gallery** — display notes as a grid without column grouping
-- **Sub-groups** — add a second grouping axis to create rows within each column
-- **Drag-and-drop** — move cards between columns and rows; property values update automatically
+- Build a Kanban board by grouping notes into columns with a property.
+- Use gallery mode when you want a grid without column grouping.
+- Add a second property to split each column into rows.
+- Drag cards between columns and rows to update both properties.
 
-### Card appearance
+## Cards
 
-- **Card size** — small / medium / large
-- **Image property** — show a thumbnail from a property value at the top of the card
-- **Icon property** — show an icon next to the card title
-- **Icon mapping** — map property values to Lucide icon names (`value=icon-name` format), independent of the stored value; falls back to the raw value when no mapping is set
-- **ID property** — show a muted badge above the card title; left-click copies the value to clipboard, right-click opens an edit dialog
-- **Side view** — open notes in a side pane instead of the main pane
+- Choose a small, medium or large card size.
+- Show an image from a note property at the top of each card.
+- Put a Lucide icon next to the title. Icon mappings use the `value=icon-name` format
+  and do not change the stored value.
+- Show an ID above the title. Click it to copy the value or right-click it to edit the
+  property.
+- Click a title to open its note in a new tab. The rest of the card remains available
+  for dragging.
 
-### Columns and rows
+## Columns and rows
 
-- **Color** — apply a color to a column or row header, cells, or cards
-- **Move** — reorder columns and rows with arrow buttons
-- **Hide** — hide specific columns or rows from the board
-- **Empty columns** — when `hideEmptyGroups` is off, columns in `groupOrder` are shown even if empty; other empty columns follow vault values
+- Apply colors to headers, cells or cards.
+- Reorder columns and rows from their menus.
+- Hide values that do not belong on a board.
+- Keep configured columns visible when they have no cards by turning off
+  `hideEmptyGroups` and listing them in `groupOrder`.
+- Give a column or row a display label without changing its property value. Label
+  mappings use the `value=Label` format in `groupLabels` and `subGroupLabels`.
 
-### Custom labels
+Drag and drop always writes the original property value, not its display label.
 
-- **Rename** — set a display name for any column or row without changing the underlying property value
-- **Label mappings** — configure `groupLabels` / `subGroupLabels` options using `value=Label` format (multitext property)
-- Drag-and-drop uses the original property values; labels are display-only
+## New notes
 
-### New note
+Each base can choose a folder and a template for new notes. The board assigns the
+current column and row values after creation. It can also open the note when it is
+ready.
 
-- **Folder** — specify where new notes are created (per base)
-- **Template** — apply a template file; supports Templater if the plugin is installed, otherwise copies file content
-- **Open after creation** — optionally open the new note immediately (default: off)
-- Group and sub-group property values are assigned automatically to new notes
+Invalid folder and template paths produce an error instead of creating a note
+somewhere else.
 
-### Integrations
+## Integrations
 
-- **Supercharged Links** — applies `data-link-*` attributes from note frontmatter to link pills inside card properties, enabling Supercharged Links styling; hooks `_watchContainerDynamic` for dynamic updates in directly-opened bases
+Templater commands run before the board assigns its properties, so the template keeps
+its frontmatter.
+
+Supercharged Links styling works inside cards because the board preserves native Bases
+link markup and metadata attributes.
 
 ## Configuration
 
-All options are configured directly in the Bases view config panel (per base). Plugin-level settings (column colors, appearance defaults) are saved in plugin settings.
+Board options live in the Bases view config panel. Plugin settings store column colors
+and appearance defaults.
 
-### Browse icons command
+Run the Browse icons command from the command palette to search the registered Lucide
+icons. Clicking an icon copies its name.
 
-Use **Bases Board: Browse icons** to open a searchable grid of all registered Lucide icons. Click any icon to copy its name to the clipboard — useful when setting up icon mapping.
+## Contributing
 
-## Installation
+Issues and pull requests are welcome. See [Contributing](CONTRIBUTING.md) before you
+start.
 
-### Manual
+## License
 
-1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](../../releases/latest).
-2. Copy the files to `<Vault>/.obsidian/plugins/bases-board/`.
-3. Enable the plugin in **Settings → Community plugins**.
-
-### BRAT (for beta testing)
-
-1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat).
-2. Add this repository via **BRAT → Add Beta Plugin**.
-
-## Development
-
-```bash
-npm install       # install dependencies
-npm run dev       # watch mode — rebuilds on save
-npm run build     # production build + type check
-npm run lint      # ESLint
-npm run format    # Prettier
-npm test          # Vitest
-```
+[MIT](LICENSE)

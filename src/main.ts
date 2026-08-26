@@ -1,7 +1,5 @@
-import { PluginInterface } from 'Base/PluginInterface';
-import { BoardViewSettingTab, BoardViewSettings, DEFAULT_SETTINGS } from 'Base/Settings';
+import { BoardViewSettings, DEFAULT_SETTINGS } from 'Base/Settings';
 import { Plugin, QueryController } from 'obsidian';
-import { getPropertyKeyFromId } from 'Utils';
 import { BoardViewRenderer } from 'Views/BoardViewRenderer';
 import { IconPickerModal } from 'Views/IconPickerModal';
 import { BoardOptionKeys } from 'Views/OptionsExtractor';
@@ -10,7 +8,7 @@ import Services from './Base/Services';
 export const BASES_VIEW_ID = 'board-view';
 
 export default class BoardViewPlugin extends Plugin {
-	settings: BoardViewSettings;
+	declare settings: BoardViewSettings;
 
 	async onload() {
 		// Load settings
@@ -19,18 +17,12 @@ export default class BoardViewPlugin extends Plugin {
 		// Initialize services
 		Services.initialize(this);
 
-		// Initialize plugin UI (ribbon icons, commands)
-		PluginInterface.initialize();
-
 		// Icon picker command
 		this.addCommand({
 			id: 'browse-icons',
 			name: 'Browse icons',
 			callback: () => new IconPickerModal(this.app).open(),
 		});
-
-		// Add settings tab
-		this.addSettingTab(new BoardViewSettingTab(this.app, this));
 
 		this.registerBasesView(BASES_VIEW_ID, {
 			name: 'Board',
@@ -81,13 +73,6 @@ export default class BoardViewPlugin extends Plugin {
 							default: '',
 							description:
 								'Property to show as a muted ID above the card title. Click copies it to clipboard.',
-						},
-						{
-							type: 'toggle',
-							displayName: 'Open in side view',
-							key: BoardOptionKeys.OPEN_IN_SIDE_VIEW,
-							default: true,
-							description: 'Open file.name in side view',
 						},
 					],
 				},
@@ -243,8 +228,7 @@ export default class BoardViewPlugin extends Plugin {
 							displayName: 'Template',
 							key: BoardOptionKeys.NEW_NOTE_TEMPLATE,
 							default: [],
-							description:
-								'Template file path. Supports Templater if installed (e.g. Templates/Task.md)',
+							description: 'Template file path (e.g. Templates/Task.md)',
 						},
 						{
 							type: 'toggle',
@@ -259,8 +243,6 @@ export default class BoardViewPlugin extends Plugin {
 		});
 	}
 
-	onunload() {}
-
 	async loadSettings() {
 		this.settings = Object.assign(
 			{},
@@ -274,9 +256,6 @@ export default class BoardViewPlugin extends Plugin {
 	}
 
 	isPropertyEligibleForGrouping(prop: string) {
-		if (prop.startsWith('file.')) return false;
-		const propKey = getPropertyKeyFromId(prop);
-		const type = Services.propertyManager.getPropertyType(propKey);
-		return type !== 'tags' && type !== 'multitext' && type !== 'aliases';
+		return !prop.startsWith('file.');
 	}
 }

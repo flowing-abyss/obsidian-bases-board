@@ -1,16 +1,9 @@
-import { PropertyNativeType } from 'Data/PropertyManager';
-import { InternalApp, PropertyData } from 'Types/Internal';
-import { BasesEntry, BasesPropertyId, RenderContext, setIcon } from 'obsidian';
+import { BasesEntry, BasesPropertyId, setIcon } from 'obsidian';
 import Services from '../Base/Services';
+import { wrapEmbeddedBasesLinks } from './BasesLinkCompatibility';
 import { BoardOptions } from './OptionsExtractor';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getSl(): any {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-	return (Services.app as any).plugins?.plugins?.['supercharged-links-obsidian'] ?? null;
-}
-
-export interface PropertyViewContext {
+interface PropertyViewContext {
 	options?: BoardOptions;
 }
 
@@ -22,14 +15,10 @@ export class PropertyView {
 	}
 
 	render(entry: BasesEntry, propId: BasesPropertyId): HTMLElement | null {
-		const propertyName = propId.split('.').slice(1).join('.');
 		const value = entry.getValue(propId);
-		// eslint-disable-next-line sonarjs/different-types-comparison
-		if (value === null || value === undefined) return null;
+		if (value === null) return null;
 
-		const propertyNativeType = Services.propertyManager.getPropertyType(propertyName);
-
-		const propEl = document.createElement('div');
+		const propEl = createDiv();
 
 		if (propId === 'file.name') {
 			// Check if we need to render an icon
@@ -45,12 +34,11 @@ export class PropertyView {
 				const iconName = this.options?.iconMapping?.[rawIconValue] ?? rawIconValue;
 
 				// Create icon element
-				const iconEl = document.createElement('span');
-				iconEl.classList.add('board-card-icon');
+				const iconEl = createSpan('board-card-icon');
 				setIcon(iconEl, iconName);
 
 				// Create file name element
-				const fileNameEl = document.createElement('div');
+				const fileNameEl = createDiv();
 				fileNameEl.classList.add(
 					'metadata-property-value',
 					'card-prop',
@@ -73,69 +61,14 @@ export class PropertyView {
 				propEl.classList.add('clickable');
 				propEl.textContent = value.toString();
 			}
-		} else if (propId.startsWith('file.') || propId.startsWith('formula.')) {
+		} else {
 			propEl.classList.add('metadata-property-value', 'card-prop');
-			value.renderTo(propEl, new RenderContext());
-		} else if (propId.startsWith('note.')) {
-			// add parent to propEl with class metadata-property and data-property-key equal to PropertyNativeType
-			propEl.classList.add('metadata-property');
-			propEl.setAttribute('data-property-key', String(propertyNativeType));
-
-			const child = document.createElement('div');
-			child.classList.add('metadata-property-value', 'card-prop');
-			propEl.appendChild(child);
-
-			let propertyValue;
-
-			if (!value.isTruthy()) {
-				propertyValue = null;
-			} else if (
-				propertyNativeType === PropertyNativeType.MULTITEXT ||
-				propertyNativeType === PropertyNativeType.TAGS
-			) {
-				propertyValue = (value as PropertyData).data;
-			} else {
-				propertyValue = value.toString();
-			}
-
-			const context = {
-				app: Services.app,
-				blur: () => {},
-				key: propertyName,
-				onChange: (newValue: string) => {
-					if (newValue === '' && !value.isTruthy()) {
-						return;
-					}
-					void Services.propertyManager.updateFrontmatter(
-						entry.file,
-						propertyName,
-						newValue,
-					);
-				},
-				sourcePath: entry.file.path,
-				index: entry.file.name,
-			};
-
-			if (propertyNativeType) {
-				const widget = (Services.app as InternalApp).metadataTypeManager
-					.registeredTypeWidgets[propertyNativeType];
-				(
-					widget as {
-						render: (el: HTMLElement, value: unknown, context: unknown) => void;
-					}
-				).render(child, propertyValue, context);
-			}
-
-			// Let Supercharged Links process any link pills the widget rendered.
-			// Widget renders are async (rAF/timeout), so we give a short delay then
-			// call SL's own updateContainer() — it applies data-link-* attrs exactly
-			// as it would for any other Obsidian view.
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-			const sl = getSl();
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-			if (sl && typeof sl.updateContainer === 'function') {
-				// eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-				setTimeout(() => sl.updateContainer(child, sl, '[data-href]'), 50);
+			try {
+				value.renderTo(propEl, Services.app.renderContext);
+				wrapEmbeddedBasesLinks(propEl);
+			} catch (error) {
+				console.error(`[Bases Board] Failed to render ${propId}`, error);
+				propEl.textContent = value.toString();
 			}
 		}
 

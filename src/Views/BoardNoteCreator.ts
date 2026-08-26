@@ -1,30 +1,34 @@
 import Services from 'Base/Services';
-import { TFile, TFolder } from 'obsidian';
-import { InternalFileManager, InternalWorkspace } from 'Types/Internal';
-import { getPropertyKeyFromId } from 'Utils';
-import { EMPTY_GROUP_VALUE } from './BoardViewRenderer';
+import { Component, Notice, TFile, TFolder } from 'obsidian';
+import { getPropertyKeyFromId, isWritablePropertyId } from 'Utils';
+import { EMPTY_GROUP_ID } from './BoardConstants';
 import { BoardOptions } from './OptionsExtractor';
 
-export class BoardNoteCreator {
-	private pendingNote: {
-		groupValue: unknown;
-		subGroupValue?: unknown;
-		groupPropertyId?: string | null;
-		subGroupPropertyId?: string | null;
-	} | null = null;
+type CreateFileForView = (
+	frontmatterProcessor: (frontmatter: Record<string, unknown>) => void,
+) => Promise<void>;
 
-	handleNewNoteClick(
+export class BoardNoteCreator extends Component {
+	private readonly pendingTemplateWaits = new Set<() => void>();
+
+	onunload(): void {
+		for (const cancel of [...this.pendingTemplateWaits]) cancel();
+		this.pendingTemplateWaits.clear();
+	}
+
+	async handleNewNoteClick(
 		groupValue: unknown,
 		subGroupValue?: unknown,
 		groupPropertyId?: string | null,
 		subGroupPropertyId?: string | null,
 		options?: BoardOptions,
-	): void {
+		createFileForView?: CreateFileForView,
+	): Promise<void> {
 		const folder = options?.newNoteFolder || '';
 		const template = options?.newNoteTemplate || '';
 
 		if (folder || template) {
-			void this.createNote(
+			await this.createNote(
 				groupValue,
 				subGroupValue,
 				groupPropertyId,
@@ -36,33 +40,23 @@ export class BoardNoteCreator {
 			return;
 		}
 
-		// Default behavior: trigger native Bases new button
-		this.pendingNote = { groupValue, subGroupValue, groupPropertyId, subGroupPropertyId };
-		const newButton = document.querySelector('.bases-toolbar-new-item-menu .text-icon-button');
-		if (newButton instanceof HTMLElement) {
-			newButton.click();
-		} else {
-			console.warn('[BoardNoteCreator] New button not found');
-			this.pendingNote = null;
+		if (!createFileForView) {
+			console.warn('[BoardNoteCreator] Native Bases file creator is unavailable');
+			return;
 		}
-	}
-
-	async processPendingNote(): Promise<void> {
-		if (!this.pendingNote) return;
 
 		try {
-			const file = (Services.app.workspace as InternalWorkspace)._activeEditor?.file;
-			if (file instanceof TFile) {
-				await this.assignGroupValues(
-					file,
-					this.pendingNote.groupValue,
-					this.pendingNote.subGroupValue,
-					this.pendingNote.groupPropertyId,
-					this.pendingNote.subGroupPropertyId,
+			await createFileForView((frontmatter) => {
+				this.assignGroupValuesToFrontmatter(
+					frontmatter,
+					groupValue,
+					subGroupValue,
+					groupPropertyId,
+					subGroupPropertyId,
 				);
-			}
-		} finally {
-			this.pendingNote = null;
+			});
+		} catch (error) {
+			console.error('[BoardNoteCreator] Failed to create note', error);
 		}
 	}
 
@@ -76,45 +70,23 @@ export class BoardNoteCreator {
 		openAfterCreation = false,
 	): Promise<void> {
 		const app = Services.app;
-		const fileManager = app.fileManager as InternalFileManager;
-		const folder = this.resolveFolder(folderPath);
 		let newFile: TFile | null = null;
 
 		try {
-			// Try Templater if template is set
+			const folder = this.resolveFolder(folderPath);
 			if (templatePath) {
 				const templateFile = app.vault.getFileByPath(templatePath);
-				if (templateFile) {
-					/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, obsidianmd/no-tfile-tfolder-cast */
-					const tp = (app as any).plugins?.plugins?.['templater-obsidian'];
-					if (
-						tp?.templater &&
-						typeof tp.templater.create_new_note_from_template === 'function'
-					) {
-						newFile = (await tp.templater.create_new_note_from_template(
-							templateFile,
-							folder,
-							undefined,
-							false,
-						)) as TFile;
-						/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, obsidianmd/no-tfile-tfolder-cast */
-					} else {
-						// Fallback: create file and copy template content
-						const content = await app.vault.read(templateFile);
-						newFile = await fileManager.createNewMarkdownFile(folder, 'Untitled');
-						await app.vault.modify(newFile, content);
-					}
-				}
+				if (!templateFile) throw new Error(`Template not found: ${templatePath}`);
+				const content = await app.vault.cachedRead(templateFile);
+				newFile = await this.createUntitledFile(folder, content);
+				await this.waitForTemplateProcessing(newFile, content);
 			}
 
 			// No template or template file not found — create blank file
 			if (!newFile) {
-				newFile = await fileManager.createNewMarkdownFile(folder, 'Untitled');
+				newFile = await this.createUntitledFile(folder);
 			}
 
-			if (openAfterCreation) {
-				await app.workspace.openLinkText(newFile.path, '', true);
-			}
 			await this.assignGroupValues(
 				newFile,
 				groupValue,
@@ -122,8 +94,77 @@ export class BoardNoteCreator {
 				groupPropertyId,
 				subGroupPropertyId,
 			);
+			if (openAfterCreation) {
+				await app.workspace.openLinkText(newFile.path, '', true);
+			}
 		} catch (e) {
 			console.error('[BoardNoteCreator] Failed to create note', e);
+			new Notice(e instanceof Error ? e.message : 'Could not create the note.');
+		}
+	}
+
+	private async waitForTemplateProcessing(file: TFile, templateContent: string): Promise<void> {
+		if (!this.hasTemplaterCommands(templateContent)) return;
+
+		const app = Services.app;
+		await new Promise<void>((resolve, reject) => {
+			let settled = false;
+			const timeoutId = window.setTimeout(() => {
+				finish(
+					new Error(
+						'Timed out waiting for Templater. The board properties were not written to avoid corrupting the template frontmatter.',
+					),
+				);
+			}, 120_000);
+			const eventRef = app.vault.on('modify', (modifiedFile) => {
+				if (modifiedFile.path === file.path) void checkContent();
+			});
+
+			const finish = (error?: Error) => {
+				if (settled) return;
+				settled = true;
+				window.clearTimeout(timeoutId);
+				app.vault.offref(eventRef);
+				this.pendingTemplateWaits.delete(cancel);
+				if (error) reject(error);
+				else resolve();
+			};
+			const cancel = () =>
+				finish(new Error('Note creation was cancelled because the board closed.'));
+			this.pendingTemplateWaits.add(cancel);
+
+			const checkContent = async () => {
+				try {
+					const content = await app.vault.read(file);
+					if (!this.hasTemplaterCommands(content)) finish();
+				} catch (error) {
+					finish(error instanceof Error ? error : new Error(String(error)));
+				}
+			};
+
+			void checkContent();
+		});
+	}
+
+	private hasTemplaterCommands(content: string): boolean {
+		return /<%[-_*+]?[\s\S]*?%>/.test(content);
+	}
+
+	private async createUntitledFile(folder: TFolder, content = ''): Promise<TFile> {
+		const folderPrefix = folder.path ? `${folder.path}/` : '';
+		let suffix = 0;
+
+		while (true) {
+			const name = suffix === 0 ? 'Untitled.md' : `Untitled ${suffix}.md`;
+			const path = `${folderPrefix}${name}`;
+			if (!Services.app.vault.getAbstractFileByPath(path)) {
+				try {
+					return await Services.app.vault.create(path, content);
+				} catch (error) {
+					if (!Services.app.vault.getAbstractFileByPath(path)) throw error;
+				}
+			}
+			suffix += 1;
 		}
 	}
 
@@ -131,6 +172,7 @@ export class BoardNoteCreator {
 		if (folderPath) {
 			const folder = Services.app.vault.getFolderByPath(folderPath);
 			if (folder) return folder;
+			throw new Error(`Folder not found: ${folderPath}`);
 		}
 		return Services.app.vault.getRoot();
 	}
@@ -142,23 +184,43 @@ export class BoardNoteCreator {
 		groupPropertyId?: string | null,
 		subGroupPropertyId?: string | null,
 	): Promise<void> {
-		if (groupPropertyId && groupValue !== null && groupValue !== EMPTY_GROUP_VALUE) {
+		if (!groupPropertyId && !subGroupPropertyId) return;
+
+		await Services.app.fileManager.processFrontMatter(file, (frontmatter) => {
+			this.assignGroupValuesToFrontmatter(
+				frontmatter as Record<string, unknown>,
+				groupValue,
+				subGroupValue,
+				groupPropertyId,
+				subGroupPropertyId,
+			);
+		});
+	}
+
+	private assignGroupValuesToFrontmatter(
+		frontmatter: Record<string, unknown>,
+		groupValue: unknown,
+		subGroupValue?: unknown,
+		groupPropertyId?: string | null,
+		subGroupPropertyId?: string | null,
+	): void {
+		if (
+			isWritablePropertyId(groupPropertyId) &&
+			groupValue !== null &&
+			groupValue !== EMPTY_GROUP_ID
+		) {
 			const groupPropertyKey = getPropertyKeyFromId(groupPropertyId);
-			await Services.propertyManager.updateFrontmatter(file, groupPropertyKey, groupValue);
+			frontmatter[groupPropertyKey] = groupValue;
 		}
 
 		if (
-			subGroupPropertyId &&
+			isWritablePropertyId(subGroupPropertyId) &&
 			subGroupValue !== undefined &&
 			subGroupValue !== null &&
-			subGroupValue !== EMPTY_GROUP_VALUE
+			subGroupValue !== EMPTY_GROUP_ID
 		) {
 			const subGroupPropertyKey = getPropertyKeyFromId(subGroupPropertyId);
-			await Services.propertyManager.updateFrontmatter(
-				file,
-				subGroupPropertyKey,
-				subGroupValue,
-			);
+			frontmatter[subGroupPropertyKey] = subGroupValue;
 		}
 	}
 }

@@ -13,3 +13,9 @@ export function getPropertyKeyFromId(propertyId: string): string {
 	}
 	return propertyId;
 }
+
+export function isWritablePropertyId(
+	propertyId: string | null | undefined,
+): propertyId is `note.${string}` {
+	return propertyId?.startsWith('note.') ?? false;
+}

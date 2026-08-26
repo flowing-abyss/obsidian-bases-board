@@ -7,45 +7,28 @@ import { BoardNoteCreator } from './BoardNoteCreator';
 import { BoardView, BoardViewCallbacks, BoardViewData } from './BoardView';
 import { BoardOptionKeys, BoardOptions, OptionsExtractor } from './OptionsExtractor';
 
-export const EMPTY_GROUP_VALUE = 'Empty Group';
-
-let instanceCounter = 0;
-
 export class BoardViewRenderer extends BasesView {
 	readonly type = BASES_VIEW_ID;
-	private readonly slWatchId: string;
 	private containerEl: HTMLElement;
 	public controller: QueryController;
 	private board: BoardView;
 	private noteCreator: BoardNoteCreator;
 	constructor(controller: QueryController, parentEl: HTMLElement) {
 		super(controller);
-		this.slWatchId = `board-view-${++instanceCounter}`;
 		this.controller = controller;
 		this.containerEl = parentEl.createDiv('board-view');
 		const boardContainer = this.containerEl.createDiv('board-board-container');
 
 		// Initialize BoardView
 		this.board = new BoardView(boardContainer);
-		this.noteCreator = new BoardNoteCreator();
-		this.hookSuperchargedLinks(boardContainer);
-
-		// Re-render when the board becomes visible (handles embed case where SL may
-		// have cleared attrs while the tab was inactive). registerEvent ensures cleanup.
-		this.registerEvent(
-			Services.app.workspace.on('active-leaf-change', () => {
-				// eslint-disable-next-line @typescript-eslint/no-deprecated
-				const activeLeafEl = Services.app.workspace.activeLeaf?.view?.containerEl;
-				if (activeLeafEl?.contains(boardContainer)) {
-					this.render();
-				}
-			}),
-		);
+		this.noteCreator = this.addChild(new BoardNoteCreator());
+		this.register(() => {
+			this.board.destroy();
+		});
 	}
 
 	// Called by Obsidian when Bases data changes
 	public onDataUpdated(): void {
-		void this.noteCreator.processPendingNote();
 		this.render();
 	}
 
@@ -55,9 +38,7 @@ export class BoardViewRenderer extends BasesView {
 		boardData.collapsedSubGroups = options.collapsedSubGroups || [];
 
 		const callbacks: BoardViewCallbacks = {
-			onCardDrop: (...args) => {
-				void this.handleCardDrop(...args);
-			},
+			onCardDrop: (...args) => this.handleCardDrop(...args),
 			onHideGroup: (g) => this.hideGroup(g),
 			onHideSubGroup: (s) => this.hideSubGroup(s),
 			onMoveGroup: (g, d) => this.moveGroup(g, d),
@@ -72,17 +53,6 @@ export class BoardViewRenderer extends BasesView {
 				this.toggleCollapsedSubGroup(id, collapsed),
 		};
 		this.board.render(boardData, callbacks);
-		this.updateSlContainer();
-	}
-
-	private updateSlContainer(): void {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-		const sl = (Services.app as any).plugins?.plugins?.['supercharged-links-obsidian'];
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-		if (!sl || typeof sl.updateContainer !== 'function') return;
-		// Widget renders (link pills) are async — wait for them before asking SL to process
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return
-		setTimeout(() => sl.updateContainer(this.containerEl, sl, '[data-href]'), 100);
 	}
 
 	private extractOptions(): BoardOptions {
@@ -112,25 +82,20 @@ export class BoardViewRenderer extends BasesView {
 
 		const file = Services.propertyManager.getFile(filePath);
 		if (!file) return;
+		const updates: Record<string, unknown> = {};
 
-		// Update Group
 		if (groupPropertyId && groupPropertyValue !== undefined) {
 			const groupPropertyKey = getPropertyKeyFromId(groupPropertyId);
-			await Services.propertyManager.updateFrontmatter(
-				file,
-				groupPropertyKey,
-				groupPropertyValue,
-			);
+			updates[groupPropertyKey] = groupPropertyValue;
 		}
 
-		// Update Sub Group
 		if (subGroupPropertyId && subGroupPropertyValue !== undefined) {
 			const subGroupPropertyKey = getPropertyKeyFromId(subGroupPropertyId);
-			await Services.propertyManager.updateFrontmatter(
-				file,
-				subGroupPropertyKey,
-				subGroupPropertyValue,
-			);
+			updates[subGroupPropertyKey] = subGroupPropertyValue;
+		}
+
+		if (Object.keys(updates).length > 0) {
+			await Services.propertyManager.updateFrontmatterValues(file, updates);
 		}
 	}
 
@@ -233,23 +198,15 @@ export class BoardViewRenderer extends BasesView {
 		modal.open();
 	}
 
-	private hookSuperchargedLinks(container: HTMLElement): void {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-		const sl = (Services.app as any).plugins?.plugins?.['supercharged-links-obsidian'];
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-		if (!sl || typeof sl._watchContainerDynamic !== 'function') return;
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-		sl._watchContainerDynamic(this.slWatchId, container, sl, '.internal-link', 'board-card');
-	}
-
-	private handleNewNoteClick(groupValue: unknown, subGroupValue?: unknown): void {
+	private async handleNewNoteClick(groupValue: unknown, subGroupValue?: unknown): Promise<void> {
 		const options = this.extractOptions();
-		this.noteCreator.handleNewNoteClick(
+		await this.noteCreator.handleNewNoteClick(
 			groupValue,
 			subGroupValue,
 			options.groupProperty,
 			options.subGroupProperty,
 			options,
+			(frontmatterProcessor) => this.createFileForView(undefined, frontmatterProcessor),
 		);
 	}
 }
@@ -270,20 +227,13 @@ class RenameModal extends Modal {
 
 	onOpen() {
 		const { contentEl, modalEl } = this;
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		modalEl.style.width = '320px';
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		modalEl.style.minWidth = 'unset';
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		contentEl.style.padding = '16px';
+		modalEl.addClass('board-rename-modal');
+		contentEl.addClass('board-modal-content');
 
 		const input = contentEl.createEl('input', { type: 'text' });
 		input.value = this.currentLabel;
 		input.placeholder = 'Display name';
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		input.style.width = '100%';
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		input.style.marginBottom = '12px';
+		input.addClass('board-modal-input');
 
 		const submit = () => {
 			this.onSubmit(input.value);
@@ -298,7 +248,7 @@ class RenameModal extends Modal {
 		const btn = contentEl.createEl('button', { text: 'Rename' });
 		btn.addEventListener('click', submit);
 
-		setTimeout(() => {
+		input.win.setTimeout(() => {
 			input.focus();
 			input.select();
 		}, 50);

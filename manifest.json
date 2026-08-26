@@ -6,5 +6,6 @@
 	"description": "Interactive board view for bases, use as Kanban or Gallery, with grouping for rows and columns.",
 	"author": "flowing-abyss",
 	"authorUrl": "https://github.com/flowing-abyss",
+	"fundingUrl": "https://boosty.to/flowing-abyss/donate",
 	"isDesktopOnly": false
 }

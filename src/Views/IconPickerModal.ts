@@ -9,13 +9,9 @@ export class IconPickerModal extends Modal {
 
 	onOpen() {
 		const { contentEl, modalEl } = this;
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		modalEl.style.width = '640px';
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		modalEl.style.maxWidth = '90vw';
+		modalEl.addClass('icon-picker-modal');
 		contentEl.empty();
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		contentEl.style.padding = '16px';
+		contentEl.addClass('icon-picker-modal-content');
 
 		const allIcons = getIconIds().sort((a, b) => a.localeCompare(b));
 
@@ -23,14 +19,12 @@ export class IconPickerModal extends Modal {
 			type: 'text',
 			placeholder: 'Search icons…',
 		});
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		searchEl.style.cssText = 'width:100%;margin-bottom:12px;box-sizing:border-box;';
+		searchEl.addClass('icon-picker-search');
 
-		const hint = contentEl.createEl('p');
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		hint.style.cssText =
-			'margin:0 0 10px;font-size:var(--font-ui-smaller);color:var(--text-muted);';
-		hint.textContent = `${allIcons.length} icons — click to copy name`;
+		const hint = contentEl.createEl('p', {
+			cls: 'icon-picker-hint',
+			text: `${allIcons.length} icons — click to copy name`,
+		});
 
 		const gridEl = contentEl.createDiv('icon-picker-grid');
 
@@ -38,21 +32,28 @@ export class IconPickerModal extends Modal {
 			gridEl.empty();
 			const slice = icons.slice(0, ICONS_PER_PAGE);
 			for (const id of slice) {
-				const item = gridEl.createDiv('icon-picker-item');
+				const item = gridEl.createEl('button', {
+					cls: 'icon-picker-item',
+					attr: { type: 'button', 'aria-label': `Copy icon name ${id}` },
+				});
 				const iconWrap = item.createDiv('icon-picker-icon');
 				setIcon(iconWrap, id);
 				item.createDiv({ cls: 'icon-picker-name', text: id });
 				item.addEventListener('click', () => {
-					void navigator.clipboard.writeText(id);
-					new Notice(`Copied: ${id}`, 1500);
+					void navigator.clipboard
+						.writeText(id)
+						.then(() => new Notice(`Copied: ${id}`, 1500))
+						.catch((error: unknown) => {
+							console.error('[Bases Board] Failed to copy icon name', error);
+							new Notice('Could not copy the icon name.');
+						});
 				});
 			}
 			if (icons.length > ICONS_PER_PAGE) {
-				const more = gridEl.createEl('p');
-				// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-				more.style.cssText =
-					'width:100%;text-align:center;color:var(--text-muted);font-size:var(--font-ui-smaller);margin-top:8px;';
-				more.textContent = `Showing ${ICONS_PER_PAGE} of ${icons.length} — refine your search`;
+				gridEl.createEl('p', {
+					cls: 'icon-picker-more',
+					text: `Showing ${ICONS_PER_PAGE} of ${icons.length} — refine your search`,
+				});
 			}
 		};
 
@@ -65,7 +66,7 @@ export class IconPickerModal extends Modal {
 			render(filtered);
 		});
 
-		setTimeout(() => {
+		searchEl.win.setTimeout(() => {
 			searchEl.focus();
 		}, 50);
 	}

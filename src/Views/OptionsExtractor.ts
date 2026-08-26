@@ -1,6 +1,6 @@
 import { BasesPropertyId, BasesViewConfig } from 'obsidian';
-import { getPropertyKeyFromId } from 'Utils';
 import Services from '../Base/Services';
+import { EMPTY_GROUP_ID, LEGACY_EMPTY_GROUP_VALUE } from './BoardConstants';
 
 export const BoardOptionKeys = {
 	GROUP_PROPERTY: 'groupProperty',
@@ -15,7 +15,6 @@ export const BoardOptionKeys = {
 	HIDE_EMPTY_GROUPS: 'hideEmptyGroups',
 	HIDE_EMPTY_SUB_GROUPS: 'hideEmptySubGroups',
 	CARD_SIZE: 'cardSize',
-	OPEN_IN_SIDE_VIEW: 'openInSideView',
 	HIDDEN_GROUPS: 'hiddenGroups',
 	HIDDEN_SUB_GROUPS: 'hiddenSubGroups',
 	COLLAPSED_SUB_GROUPS: 'collapsedSubGroups',
@@ -46,7 +45,6 @@ export interface BoardOptions {
 	hideEmptyGroups?: boolean;
 	hideEmptySubGroups?: boolean;
 	cardSize?: 'small' | 'medium' | 'large';
-	openInSideView?: boolean;
 	hiddenGroups?: string[];
 	hiddenSubGroups?: string[];
 	collapsedSubGroups?: string[];
@@ -64,12 +62,38 @@ export interface BoardOptions {
 	colorCards?: boolean; // minimal mode only (left border)
 }
 
+function normalizeGroupId(value: string): string {
+	return value === LEGACY_EMPTY_GROUP_VALUE ? EMPTY_GROUP_ID : value;
+}
+
+function readStringArray(value: unknown): string[] {
+	return Array.isArray(value)
+		? value.filter((item): item is string => typeof item === 'string')
+		: [];
+}
+
+function readGroupArray(value: unknown): string[] {
+	return readStringArray(value).map(normalizeGroupId);
+}
+
+function readBoolean(value: unknown, fallback: boolean): boolean {
+	return typeof value === 'boolean' ? value : fallback;
+}
+
+function readPropertyId(value: unknown): BasesPropertyId | null {
+	return typeof value === 'string' && value.length > 0 ? (value as BasesPropertyId) : null;
+}
+
+function readCardSize(value: unknown): 'small' | 'medium' | 'large' {
+	return value === 'small' || value === 'large' || value === 'medium' ? value : 'medium';
+}
+
 function parseLabels(entries: string[]): Record<string, string> {
 	const result: Record<string, string> = {};
 	for (const entry of entries) {
 		const sep = entry.indexOf('=');
 		if (sep > 0) {
-			result[entry.slice(0, sep).trim()] = entry.slice(sep + 1).trim();
+			result[normalizeGroupId(entry.slice(0, sep).trim())] = entry.slice(sep + 1).trim();
 		}
 	}
 	return result;
@@ -80,15 +104,12 @@ export class OptionsExtractor {
 
 	extract(): BoardOptions {
 		const options: BoardOptions = {};
-		let groupProperty =
-			(this.config.get(BoardOptionKeys.GROUP_PROPERTY) as BasesPropertyId | null) || null;
-		let subGroupProperty =
-			(this.config.get(BoardOptionKeys.SUB_GROUP_PROPERTY) as BasesPropertyId | null) || null;
+		let groupProperty = readPropertyId(this.config.get(BoardOptionKeys.GROUP_PROPERTY));
+		let subGroupProperty = readPropertyId(this.config.get(BoardOptionKeys.SUB_GROUP_PROPERTY));
 
 		// Validate group property is still eligible
 		if (groupProperty) {
-			const propKey = getPropertyKeyFromId(groupProperty);
-			if (!Services.plugin.isPropertyEligibleForGrouping(propKey)) {
+			if (!Services.plugin.isPropertyEligibleForGrouping(groupProperty)) {
 				console.warn(
 					`Group property '${groupProperty}' is no longer eligible for grouping. Clearing it.`,
 				);
@@ -99,8 +120,7 @@ export class OptionsExtractor {
 
 		// Validate subgroup property is still eligible
 		if (subGroupProperty) {
-			const propKey = getPropertyKeyFromId(subGroupProperty);
-			if (!Services.plugin.isPropertyEligibleForGrouping(propKey)) {
+			if (!Services.plugin.isPropertyEligibleForGrouping(subGroupProperty)) {
 				console.warn(
 					`Sub-group property '${subGroupProperty}' is no longer eligible for grouping. Clearing it.`,
 				);
@@ -111,51 +131,51 @@ export class OptionsExtractor {
 
 		options.groupProperty = groupProperty;
 		options.subGroupProperty = subGroupProperty;
-		options.imageProperty =
-			(this.config.get(BoardOptionKeys.IMAGE_PROPERTY) as BasesPropertyId | null) || null;
-		options.iconProperty =
-			(this.config.get(BoardOptionKeys.ICON_PROPERTY) as BasesPropertyId | null) || null;
-		options.idProperty =
-			(this.config.get(BoardOptionKeys.ID_PROPERTY) as BasesPropertyId | null) || null;
-		options.groupOrder = (this.config.get(BoardOptionKeys.GROUP_ORDER) as string[]) || [];
-		options.subGroupOrder =
-			(this.config.get(BoardOptionKeys.SUB_GROUP_ORDER) as string[]) || [];
+		options.imageProperty = readPropertyId(this.config.get(BoardOptionKeys.IMAGE_PROPERTY));
+		options.iconProperty = readPropertyId(this.config.get(BoardOptionKeys.ICON_PROPERTY));
+		options.idProperty = readPropertyId(this.config.get(BoardOptionKeys.ID_PROPERTY));
+		options.groupOrder = readGroupArray(this.config.get(BoardOptionKeys.GROUP_ORDER));
+		options.subGroupOrder = readGroupArray(this.config.get(BoardOptionKeys.SUB_GROUP_ORDER));
 		options.groupLabels = parseLabels(
-			(this.config.get(BoardOptionKeys.GROUP_LABELS) as string[]) || [],
+			readStringArray(this.config.get(BoardOptionKeys.GROUP_LABELS)),
 		);
 		options.subGroupLabels = parseLabels(
-			(this.config.get(BoardOptionKeys.SUB_GROUP_LABELS) as string[]) || [],
+			readStringArray(this.config.get(BoardOptionKeys.SUB_GROUP_LABELS)),
 		);
-		options.hideEmptyGroups =
-			(this.config.get(BoardOptionKeys.HIDE_EMPTY_GROUPS) as boolean) || false;
-		options.hideEmptySubGroups =
-			(this.config.get(BoardOptionKeys.HIDE_EMPTY_SUB_GROUPS) as boolean) || false;
-		options.cardSize =
-			(this.config.get(BoardOptionKeys.CARD_SIZE) as 'small' | 'medium' | 'large') ||
-			'medium';
-		options.openInSideView =
-			(this.config.get(BoardOptionKeys.OPEN_IN_SIDE_VIEW) as boolean) || true;
-		options.hiddenGroups = (this.config.get(BoardOptionKeys.HIDDEN_GROUPS) as string[]) || [];
-		options.hiddenSubGroups =
-			(this.config.get(BoardOptionKeys.HIDDEN_SUB_GROUPS) as string[]) || [];
-		options.collapsedSubGroups =
-			(this.config.get(BoardOptionKeys.COLLAPSED_SUB_GROUPS) as string[]) || [];
-		options.hideImagePlaceholder =
-			(this.config.get(BoardOptionKeys.HIDE_IMAGE_PLACEHOLDER) as boolean) || false;
+		options.hideEmptyGroups = readBoolean(
+			this.config.get(BoardOptionKeys.HIDE_EMPTY_GROUPS),
+			false,
+		);
+		options.hideEmptySubGroups = readBoolean(
+			this.config.get(BoardOptionKeys.HIDE_EMPTY_SUB_GROUPS),
+			false,
+		);
+		options.cardSize = readCardSize(this.config.get(BoardOptionKeys.CARD_SIZE));
+		options.hiddenGroups = readGroupArray(this.config.get(BoardOptionKeys.HIDDEN_GROUPS));
+		options.hiddenSubGroups = readGroupArray(
+			this.config.get(BoardOptionKeys.HIDDEN_SUB_GROUPS),
+		);
+		options.collapsedSubGroups = readGroupArray(
+			this.config.get(BoardOptionKeys.COLLAPSED_SUB_GROUPS),
+		);
+		options.hideImagePlaceholder = readBoolean(
+			this.config.get(BoardOptionKeys.HIDE_IMAGE_PLACEHOLDER),
+			true,
+		);
 		options.newNoteFolder =
-			((this.config.get(BoardOptionKeys.NEW_NOTE_FOLDER) as string[]) || [])[0] || '';
+			readStringArray(this.config.get(BoardOptionKeys.NEW_NOTE_FOLDER))[0] ?? '';
 		options.newNoteTemplate =
-			((this.config.get(BoardOptionKeys.NEW_NOTE_TEMPLATE) as string[]) || [])[0] || '';
-		options.newNoteOpen = (this.config.get(BoardOptionKeys.NEW_NOTE_OPEN) as boolean) || false;
+			readStringArray(this.config.get(BoardOptionKeys.NEW_NOTE_TEMPLATE))[0] ?? '';
+		options.newNoteOpen = readBoolean(this.config.get(BoardOptionKeys.NEW_NOTE_OPEN), false);
 
 		options.iconMapping = parseLabels(
-			(this.config.get(BoardOptionKeys.ICON_MAPPING) as string[]) || [],
+			readStringArray(this.config.get(BoardOptionKeys.ICON_MAPPING)),
 		);
 
 		// Color Options
-		options.colorHeaders = (this.config.get(BoardOptionKeys.COLOR_HEADERS) as boolean) || true;
-		options.colorCells = (this.config.get(BoardOptionKeys.COLOR_CELLS) as boolean) || false;
-		options.colorCards = (this.config.get(BoardOptionKeys.COLOR_CARDS) as boolean) || true;
+		options.colorHeaders = readBoolean(this.config.get(BoardOptionKeys.COLOR_HEADERS), true);
+		options.colorCells = readBoolean(this.config.get(BoardOptionKeys.COLOR_CELLS), false);
+		options.colorCards = readBoolean(this.config.get(BoardOptionKeys.COLOR_CARDS), true);
 
 		return options;
 	}

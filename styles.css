@@ -1,17 +1,12 @@
-body {
+.board-view {
 	--board-view-column-width: 280px;
 	--board-view-column-width-small: 240px;
 	--board-view-column-width-large: 310px;
 
-	--board-view-card-font-size-small: 0.9em;
-	--board-view-card-font-size-large: 1.1em;
-
 	--board-view-plugin-image-height: 140px;
 	--board-view-plugin-image-height-small: 112px;
 	--board-view-plugin-image-height-large: 168px;
-}
-
-.board-view {
+	--board-card-divider: color-mix(in srgb, var(--text-normal) 22%, transparent);
 	font-size: var(--font-ui-small);
 	display: flex;
 	flex-direction: column;
@@ -39,6 +34,10 @@ body {
 	gap: 6px;
 	margin-bottom: 8px;
 	flex-shrink: 0;
+	position: sticky;
+	top: 0;
+	z-index: 5;
+	background: var(--background-primary);
 }
 
 .board-column-header-spacer {
@@ -84,7 +83,7 @@ body {
 }
 
 .board-header-count {
-	font-size: var(--font-ui-small);
+	font-size: inherit;
 	color: var(--text-faint);
 	/* background: var(--background-modifier-border); */
 	padding: 2px 6px;
@@ -136,6 +135,7 @@ body {
 	display: flex;
 	align-items: center;
 	border-radius: 4px;
+	color: var(--text-muted);
 }
 
 .board-row-header-bar .board-header-menu {
@@ -150,7 +150,8 @@ body {
 }
 
 .board-column-header:hover .board-header-menu,
-.board-row-header-bar:hover .board-header-menu {
+.board-row-header-bar:hover .board-header-menu,
+.board-header-menu:focus-visible {
 	opacity: 1;
 }
 
@@ -164,7 +165,6 @@ body {
 	display: flex;
 	align-items: center;
 	gap: 0px;
-	cursor: pointer;
 	user-select: none;
 	padding: 4px 8px;
 	font-weight: 600;
@@ -175,10 +175,16 @@ body {
 	padding-left: 0px;
 }
 
+.board-row-collapse {
+	display: inline-flex;
+	align-items: center;
+	min-width: 0;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+
 .board-row-title {
-	/* font-size: 1.1em; */
-	/* Match main header size (inherit or 1em) */
-	font-size: 1em;
 	margin-right: 0px;
 }
 
@@ -197,6 +203,8 @@ body {
 .board-cell {
 	width: var(--board-view-column-width);
 	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
 	padding: 8px;
 	border-radius: 10px;
 	/* background: var(--background-secondary); */
@@ -204,24 +212,41 @@ body {
 }
 
 .board-card {
-	/* background: var(--background-primary); */
 	width: 100%;
 	background: var(--background-secondary);
-	border: none;
+	border: 1px solid var(--board-card-divider);
 	border-radius: 10px;
-	padding: 4px;
+	padding: 6px;
 	margin-bottom: 8px;
-	cursor: pointer;
+	cursor: grab;
 	overflow: hidden;
 	word-wrap: break-word;
+	position: relative;
+	transition:
+		border-color 120ms ease,
+		background-color 120ms ease,
+		box-shadow 120ms ease;
 }
 
-/* Force grab cursor on properties to override input text cursor */
+.board-card:hover {
+	border-color: color-mix(in srgb, var(--text-normal) 38%, transparent);
+	background: var(--background-secondary-alt);
+}
+
+/* Keep metadata text at the host UI scale; the card surface remains draggable. */
 .board-card .metadata-property,
-.board-card .metadata-property-value,
-.board-card .metadata-property-value * {
-	cursor: pointer !important;
+.board-card .metadata-property-value {
 	font-size: var(--font-ui-small);
+}
+
+.board-card-open,
+.board-card a,
+.board-card button,
+.board-card input,
+.board-card textarea,
+.board-card select,
+.board-card [contenteditable='true'] {
+	cursor: pointer;
 }
 
 .board-card .metadata-property-value .metadata-input-longtext {
@@ -233,6 +258,16 @@ body {
 	/* Remove padding on date icon which forces height */
 }
 
+/* Match Obsidian's embedded Bases card markup without changing link layout. */
+.board-card .board-embedded-link {
+	display: inline;
+}
+
+/* Let integration-provided colors on the native line reach its inner link. */
+.board-card .board-embedded-link.data-link-text > .internal-link {
+	color: inherit;
+}
+
 /* Card Sizes */
 .board-board-wrapper.card-size-small {
 	--board-view-column-width: var(--board-view-column-width-small);
@@ -240,14 +275,6 @@ body {
 
 .board-board-wrapper.card-size-large {
 	--board-view-column-width: var(--board-view-column-width-large);
-}
-
-.board-card.card-size-small {
-	font-size: var(--board-view-card-font-size-small);
-}
-
-.board-card.card-size-large {
-	font-size: var(--board-view-card-font-size-large);
 }
 
 .board-card .card-image {
@@ -295,77 +322,53 @@ body {
 	height: 20px;
 }
 
-/* SortableJS Ghost - Hide the placeholder (since we use blue lines) */
+/* Keep drag elements geometrically stable so themes cannot collapse the board mid-drag. */
 .board-sortable-ghost {
-	opacity: 0;
-	height: 0;
-	padding: 0;
-	margin: 0;
-	border: none;
-	overflow: hidden;
-	/* background-color: red; */
+	opacity: 1;
+	outline: 2px dashed var(--interactive-accent);
+	outline-offset: -2px;
 }
 
-/* BUT show the ghost in the source list so the original item doesn't disappear */
-.board-drag-source .board-sortable-ghost {
-	opacity: 0.5;
-	height: auto;
-	padding: 8px;
-	/* Restore padding */
-	margin-bottom: 8px;
-	/* Restore margin */
-	border: 1px solid var(--background-modifier-border);
-	/* Restore border */
-	overflow: visible;
-	display: block;
-}
-
-/* SortableJS Chosen - The original item stays in place and is dimmed */
-.board-sortable-chosen {
-	opacity: 0.5;
-	/* background-color: blue; */
-}
-
-/* Drop Target Indicators */
-.board-item-drop-target-top {
-	border-top: 2px solid var(--interactive-accent) !important;
-	margin-top: -2px;
-	/* position: absolute; */
-	/* Prevent layout shift */
-}
-
-.board-item-drop-target-bottom {
-	border-bottom: 2px solid var(--interactive-accent) !important;
-	margin-bottom: -2px;
-	/* position: absolute; */
-	/* Prevent layout shift */
+.board-sortable-chosen,
+.board-sortable-drag {
+	opacity: 1;
+	cursor: grabbing;
 }
 
 /* New Note Button */
 .board-new-note-button {
+	order: 1;
 	width: 100%;
 	background: transparent;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 10px;
 	padding: 8px;
-	margin-top: 8px;
+	margin-top: 0;
 	cursor: pointer;
 	color: var(--text-faint);
-	font-size: 14px;
+	font-size: var(--font-ui-small);
 	transition:
 		opacity 0.2s,
 		background-color 0.2s;
 	text-align: left;
 }
 
+.board-new-note-button:only-child {
+	margin-top: 8px;
+}
+
 .board-new-note-button:hover {
-	opacity: 0.7;
 	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+}
+
+.board-new-note-button.is-loading {
+	cursor: wait;
+	opacity: 0.65;
 }
 
 .board-card .file-name {
-	font-size: var(--font-ui-medium);
-	/* font-size: var(--table-text-size); */
+	font-size: var(--font-ui-small);
 	font-weight: calc(var(--font-weight) + var(--bold-modifier));
 }
 
@@ -456,15 +459,68 @@ body {
 	padding-left: 6px;
 }
 
+.board-card-open {
+	cursor: pointer;
+	border-radius: 4px;
+}
+
+.board-card-open:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
 .card-id {
-	padding-left: 6px;
+	display: block;
+	padding: 0 0 0 6px;
 	font-size: var(--font-ui-smaller);
-	opacity: 0.45;
 	cursor: pointer;
 	user-select: none;
+	color: var(--text-muted);
+	font-family: inherit;
+	text-align: left;
+}
+
+.board-id-edit-modal {
+	width: 280px;
+	min-width: unset;
+}
+
+.board-rename-modal {
+	width: 320px;
+	min-width: unset;
+}
+
+.board-modal-content {
+	padding: 16px;
+}
+
+.board-modal-input {
+	width: 100%;
+	margin-bottom: 12px;
 }
 
 /* Icon Picker Modal */
+.icon-picker-modal {
+	width: 640px;
+	max-width: 90vw;
+}
+
+.icon-picker-modal-content {
+	padding: 16px;
+}
+
+.icon-picker-search {
+	width: 100%;
+	margin-bottom: 12px;
+	box-sizing: border-box;
+}
+
+.icon-picker-hint {
+	margin: 0 0 10px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
 .icon-picker-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
@@ -481,6 +537,8 @@ body {
 	border-radius: 6px;
 	cursor: pointer;
 	text-align: center;
+	color: inherit;
+	font: inherit;
 }
 
 .icon-picker-item:hover {
@@ -497,8 +555,74 @@ body {
 }
 
 .icon-picker-name {
-	font-size: 10px;
+	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
 	word-break: break-all;
 	line-height: 1.2;
+}
+
+.icon-picker-more {
+	width: 100%;
+	margin-top: 8px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	text-align: center;
+}
+
+.board-header-menu,
+.board-row-collapse,
+.card-id,
+.icon-picker-item {
+	appearance: none;
+	background: transparent;
+	border: 0;
+	box-shadow: none;
+}
+
+.board-view button.card-id,
+.board-view button.board-row-collapse {
+	appearance: none;
+	background: transparent;
+	border: 0;
+	box-shadow: none;
+	width: auto;
+	height: auto;
+	min-width: 0;
+	min-height: 0;
+	margin: 0;
+	line-height: inherit;
+	justify-content: flex-start;
+}
+
+.board-view button.card-id {
+	padding: 0 0 0 6px;
+}
+
+.board-view button.board-row-collapse {
+	padding: 0;
+}
+
+.board-header-menu:focus-visible,
+.board-row-collapse:focus-visible,
+.board-new-note-button:focus-visible,
+.card-id:focus-visible,
+.icon-picker-item:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+@media (hover: none), (pointer: coarse) {
+	.board-header-menu {
+		opacity: 1;
+		min-width: 28px;
+		min-height: 28px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.board-card,
+	.collapse-icon,
+	.board-new-note-button {
+		transition: none;
+	}
 }

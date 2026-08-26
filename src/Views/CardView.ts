@@ -1,12 +1,11 @@
-import { BasesEntry, Menu, Modal, Notice, WorkspaceLeaf } from 'obsidian';
-import { InternalWorkspace } from 'Types/Internal';
+import { BasesEntry, Menu, Modal, Notice } from 'obsidian';
 import { getPropertyKeyFromId } from 'Utils';
 import Services from '../Base/Services';
 import { ColorManager } from './ColorManager';
 import { BoardOptions } from './OptionsExtractor';
 import { PropertyView } from './PropertyView';
 
-export interface CardViewContext {
+interface CardViewContext {
 	options: BoardOptions;
 	properties: string[]; // properties to display (order)
 	colorName?: string | null;
@@ -31,58 +30,33 @@ export class CardView {
 	}
 
 	render(entry: BasesEntry): HTMLElement {
-		const card = document.createElement('div');
-		card.classList.add('board-card');
+		const card = createDiv('board-card');
 		if (this.options.cardSize) {
 			card.classList.add(`card-size-${this.options.cardSize}`);
 		}
 		card.setAttribute('data-path', entry.file.path);
 
-		card.addEventListener('mouseup', (evt) => {
-			void (async () => {
-				// Only handle left mouse button
-				if (evt.button !== 0) {
-					return;
-				}
-
-				// Check if we clicked on an interactive property
-				if ((evt.target as HTMLElement).closest('.metadata-property')) {
-					return;
-				}
-
-				evt.preventDefault();
-				evt.stopPropagation();
-
-				if (this.options.openInSideView) {
-					const workspace = Services.app.workspace;
-					const activeLeaf = workspace.getLeaf(false);
-					let targetLeaf: WorkspaceLeaf | null = null;
-
-					(workspace as InternalWorkspace).iterateRootLeaves((leaf: WorkspaceLeaf) => {
-						if (leaf !== activeLeaf) {
-							targetLeaf = leaf;
-						}
-					});
-
-					if (targetLeaf) {
-						workspace.setActiveLeaf(targetLeaf, { focus: true });
-						const newLeaf = workspace.getLeaf('tab');
-						await newLeaf.openFile(entry.file);
-					} else {
-						const newLeaf = workspace.getLeaf('split');
-						await newLeaf.openFile(entry.file);
-					}
-				} else {
-					void Services.app.workspace.openLinkText(entry.file.path, '', true);
-				}
-			})();
-		});
+		const openCard = async () => {
+			try {
+				const workspace = Services.app.workspace;
+				const targetLeaf = workspace.getLeaf('tab');
+				await targetLeaf.openFile(entry.file);
+				workspace.setActiveLeaf(targetLeaf, { focus: true });
+			} catch (error) {
+				console.error(`[Bases Board] Failed to open ${entry.file.path}`, error);
+				new Notice(`Could not open ${entry.file.basename}.`);
+			}
+		};
 
 		card.addEventListener('contextmenu', (evt) => {
 			evt.preventDefault();
-			const menu = new Menu();
-			Services.app.workspace.trigger('file-menu', menu, entry.file, 'board-card');
-			menu.showAtPosition({ x: evt.pageX, y: evt.pageY });
+			this.showFileMenu(entry, evt.pageX, evt.pageY);
+		});
+		card.addEventListener('keydown', (evt) => {
+			if (evt.key !== 'ContextMenu' && !(evt.shiftKey && evt.key === 'F10')) return;
+			evt.preventDefault();
+			const bounds = card.getBoundingClientRect();
+			this.showFileMenu(entry, bounds.left, bounds.bottom);
 		});
 
 		// Apply color based on mode
@@ -100,15 +74,16 @@ export class CardView {
 			if (imageProperty?.isTruthy()) {
 				const data = imageProperty?.toString();
 				const imgSrc = String(data);
-				const img = document.createElement('img');
-				img.classList.add('card-image');
+				const img = createEl('img', { cls: 'card-image' });
 				img.src = imgSrc; // validate local/remote paths
+				img.alt = '';
+				img.loading = 'lazy';
+				img.decoding = 'async';
 				card.appendChild(img);
 			} else {
 				// Placeholder
 				if (!this.options.hideImagePlaceholder) {
-					const placeholder = document.createElement('div');
-					placeholder.classList.add('card-image', 'placeholder');
+					const placeholder = createDiv({ cls: ['card-image', 'placeholder'] });
 					card.appendChild(placeholder);
 				}
 			}
@@ -120,9 +95,15 @@ export class CardView {
 			const idValue = entry.getValue(idPropertyId);
 			if (idValue?.isTruthy()) {
 				const idText = idValue.toString();
-				const idEl = document.createElement('div');
-				idEl.classList.add('card-id');
-				idEl.textContent = idText;
+				const idEl = createEl('button', {
+					cls: 'card-id',
+					text: idText,
+					attr: {
+						type: 'button',
+						title: `Copy ${idText}; right-click to edit`,
+						'aria-label': `Copy ID ${idText}; right-click to edit`,
+					},
+				});
 
 				// Stop mouseup so card doesn't open
 				idEl.addEventListener('mouseup', (evt) => {
@@ -133,8 +114,13 @@ export class CardView {
 				idEl.addEventListener('click', (evt) => {
 					evt.preventDefault();
 					evt.stopPropagation();
-					void navigator.clipboard.writeText(idText);
-					new Notice(`Copied: ${idText}`, 1500);
+					void navigator.clipboard
+						.writeText(idText)
+						.then(() => new Notice(`Copied: ${idText}`, 1500))
+						.catch((error: unknown) => {
+							console.error('[Bases Board] Failed to copy ID', error);
+							new Notice('Could not copy the ID.');
+						});
 				});
 
 				// Right click — edit value
@@ -165,11 +151,34 @@ export class CardView {
 				prop as `note.${string}` | `formula.${string}` | `file.${string}`,
 			);
 			if (propEl) {
+				if (prop === 'file.name') {
+					propEl.addClass('board-card-open');
+					propEl.setAttr('role', 'link');
+					propEl.setAttr('tabindex', '0');
+					propEl.setAttr('aria-label', `Open ${entry.file.basename} in a new tab`);
+					propEl.addEventListener('click', (evt) => {
+						evt.preventDefault();
+						evt.stopPropagation();
+						void openCard();
+					});
+					propEl.addEventListener('keydown', (evt) => {
+						if (evt.key !== 'Enter') return;
+						evt.preventDefault();
+						evt.stopPropagation();
+						void openCard();
+					});
+				}
 				card.appendChild(propEl);
 			}
 		}
 
 		return card;
+	}
+
+	private showFileMenu(entry: BasesEntry, x: number, y: number): void {
+		const menu = new Menu();
+		Services.app.workspace.trigger('file-menu', menu, entry.file, 'board-card');
+		menu.showAtPosition({ x, y });
 	}
 }
 
@@ -184,22 +193,20 @@ class IdEditModal extends Modal {
 
 	onOpen() {
 		const { contentEl, modalEl } = this;
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		modalEl.style.width = '280px';
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		modalEl.style.minWidth = 'unset';
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		contentEl.style.padding = '16px';
+		modalEl.addClass('board-id-edit-modal');
+		contentEl.addClass('board-modal-content');
 
 		const input = contentEl.createEl('input', { type: 'text' });
 		input.value = this.currentValue;
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		input.style.width = '100%';
-		// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-		input.style.marginBottom = '12px';
+		input.addClass('board-modal-input');
 
 		const submit = () => {
-			void this.onSubmit(input.value.trim()).then(() => this.close());
+			void this.onSubmit(input.value.trim())
+				.then(() => this.close())
+				.catch((error: unknown) => {
+					console.error('[Bases Board] Failed to update ID', error);
+					new Notice('Could not update the ID.');
+				});
 		};
 
 		input.addEventListener('keydown', (e) => {
@@ -210,7 +217,7 @@ class IdEditModal extends Modal {
 		const btn = contentEl.createEl('button', { text: 'Save' });
 		btn.addEventListener('click', submit);
 
-		setTimeout(() => {
+		input.win.setTimeout(() => {
 			input.focus();
 			input.select();
 		}, 50);

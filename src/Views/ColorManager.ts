@@ -1,7 +1,7 @@
 type RGB = `rgb(${number}, ${number}, ${number})`;
 type RGBA = `rgba(${number}, ${number}, ${number}, ${number})`;
 
-export interface LightDarkColor {
+interface LightDarkColor {
 	light: RGB | RGBA;
 	dark: RGB | RGBA;
 }
