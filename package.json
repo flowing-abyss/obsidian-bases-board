@@ -4,6 +4,9 @@
 	"description": "Interactive board view for bases, use as Kanban or Gallery, with grouping for rows and columns.",
 	"main": "main.js",
 	"type": "module",
+	"engines": {
+		"node": "^22 || >=24"
+	},
 	"scripts": {
 		"prepare": "husky",
 		"dev": "node esbuild.config.mjs",
@@ -18,7 +21,7 @@
 		"format:check": "prettier --check .",
 		"knip": "knip"
 	},
-	"lint-staged": {
+	"nano-staged": {
 		"*.{ts,js,mts,mjs}": [
 			"eslint --fix",
 			"prettier --write"
@@ -38,7 +41,6 @@
 		"@types/node": "^20.0.0",
 		"@types/sortablejs": "^1.15.9",
 		"@vitest/coverage-v8": "^4.0.0",
-		"builtin-modules": "^3.3.0",
 		"esbuild": "^0.27.0",
 		"eslint": "^9.30.1",
 		"eslint-plugin-obsidianmd": "^0.4.2",
@@ -47,7 +49,7 @@
 		"jiti": "^2.6.1",
 		"jsdom": "^29.0.1",
 		"knip": "^5.86.0",
-		"lint-staged": "^16.3.2",
+		"nano-staged": "^1.0.2",
 		"obsidian": "1.13.0",
 		"obsidian-test-mocks": "3.1.0",
 		"prettier": "^3.8.1",

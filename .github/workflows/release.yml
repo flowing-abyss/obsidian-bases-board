@@ -11,13 +11,15 @@ jobs:
 
         permissions:
             contents: write
+            id-token: write
+            attestations: write
 
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
 
-            - uses: actions/setup-node@v4
+            - uses: actions/setup-node@v7
               with:
-                  node-version: '22.x'
+                  node-version: '24.x'
                   cache: 'npm'
 
             - name: Verify release tag matches manifest version
@@ -29,9 +31,18 @@ jobs:
 
             - run: npm run build
 
-            - name: Create GitHub Release
-              uses: softprops/action-gh-release@v2
+            - name: Attest release assets
+              uses: actions/attest@v4
               with:
+                  subject-path: |
+                      main.js
+                      styles.css
+                      manifest.json
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v3
+              with:
+                  generate_release_notes: true
                   files: |
                       main.js
                       styles.css

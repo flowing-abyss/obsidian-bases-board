@@ -63,6 +63,12 @@ and appearance defaults.
 Run the Browse icons command from the command palette to search the registered Lucide
 icons. Clicking an icon copies its name.
 
+## Clipboard
+
+Bases Board never reads the clipboard. It writes to the clipboard only after an
+explicit click. Clicking a card ID copies that ID. Clicking an icon in the icon browser
+copies the icon name.
+
 ## Contributing
 
 Issues and pull requests are welcome. See [Contributing](CONTRIBUTING.md) before you
