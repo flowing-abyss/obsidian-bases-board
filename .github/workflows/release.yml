@@ -3,7 +3,7 @@ name: Release
 on:
     push:
         tags:
-            - 'v*.*.*'
+            - '*.*.*'
 
 jobs:
     release:
@@ -19,6 +19,11 @@ jobs:
               with:
                   node-version: '22.x'
                   cache: 'npm'
+
+            - name: Verify release tag matches manifest version
+              run: |
+                  manifest_version="$(node -p "require('./manifest.json').version")"
+                  test "$GITHUB_REF_NAME" = "$manifest_version"
 
             - run: npm ci
 
