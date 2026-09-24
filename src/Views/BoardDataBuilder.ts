@@ -1,9 +1,21 @@
 import Services from 'Base/Services';
-import { BasesEntry, BasesPropertyId, BasesQueryResult, BasesViewConfig } from 'obsidian';
-import { getPropertyKeyFromId } from 'Utils';
+import {
+	BasesEntry,
+	BasesPropertyId,
+	BasesQueryResult,
+	BasesSortConfig,
+	BasesViewConfig,
+} from 'obsidian';
+import { findFrontmatterKey, getPropertyKeyFromId } from 'Utils';
+import { compareEntries } from './BasesSort';
 import { EMPTY_GROUP_ID, EMPTY_GROUP_LABEL } from './BoardConstants';
 import { BoardColumn, BoardItem, BoardRow, BoardViewData } from './BoardView';
 import { BoardOptions } from './OptionsExtractor';
+
+interface DropSort {
+	keys: BasesSortConfig[]; // the view's sort without group keys
+	resort: boolean; // whether ranks must be recomputed from `keys`
+}
 
 export class BoardViewDataBuilder {
 	constructor(
@@ -42,8 +54,9 @@ export class BoardViewDataBuilder {
 		}
 		this.createColumns(groupValues, hiddenGroups, options, columns, items);
 		this.createRows(subGroupValues, hiddenSubGroups, options, rows);
+		const dropSort = this.getDropSort(groupPropertyId, subGroupPropertyId);
 		this.populateItems(
-			entries,
+			this.getRankedEntries(entries, dropSort),
 			groupPropertyId,
 			subGroupPropertyId,
 			hiddenGroups,
@@ -51,6 +64,7 @@ export class BoardViewDataBuilder {
 			items,
 		);
 		this.calculateCounts(columns, rows, items);
+		const cardProperties = this.config.getOrder();
 
 		return {
 			groupPropertyId: groupPropertyId || '',
@@ -59,10 +73,53 @@ export class BoardViewDataBuilder {
 			rows,
 			items,
 			cardOptions: options,
-			cardProperties: this.config.getOrder(),
+			cardProperties,
+			cardPropertyLabels: Object.fromEntries(
+				cardProperties.map((id) => [id, this.getPropertyLabel(id)]),
+			),
 			columnColors: Services.settings.columnColors || {},
 			collapsedSubGroups: [],
+			dropPlacement: this.getDropPlacement(dropSort),
 		};
+	}
+
+	private getPropertyLabel(id: BasesPropertyId): string {
+		const key = getPropertyKeyFromId(id);
+		const name = this.config.getDisplayName(id) || key;
+		// A Bases display name can be a bare emoji, so keep the property recognizable
+		return name.toLowerCase().includes(key.toLowerCase()) ? name : `${name} (${key})`;
+	}
+
+	// All cards of a cell share its group values, so those keys never order a drop
+	private getDropSort(
+		groupPropertyId: BasesPropertyId | null | undefined,
+		subGroupPropertyId: BasesPropertyId | null | undefined,
+	): DropSort {
+		const sort = this.config.getSort();
+		const isGroupKey = ({ property }: BasesSortConfig) =>
+			property === groupPropertyId || property === subGroupPropertyId;
+		const keys = sort.filter((key) => !isGroupKey(key));
+		const firstGroupKey = sort.findIndex(isGroupKey);
+		// Bases order still ranks cards across cells unless a group key decides first
+		return { keys, resort: firstGroupKey !== -1 && keys.length > firstGroupKey };
+	}
+
+	// Pairs entries with their rank in the order that places a dropped card
+	private getRankedEntries(entries: BasesEntry[], dropSort: DropSort): [number, BasesEntry][] {
+		const ranked = [...entries.entries()];
+		if (!dropSort.resort) return ranked;
+		const order = [...ranked]
+			.sort(([i, a], [j, b]) => compareEntries(a, b, dropSort.keys) || i - j)
+			.map(([index]) => index);
+		const ranks = new Map(order.map((index, rank) => [index, rank]));
+		return ranked.map(([index, entry]) => [ranks.get(index) ?? index, entry]);
+	}
+
+	// A drop writes to the note, which makes it the most recently modified one
+	private getDropPlacement(dropSort: DropSort): BoardViewData['dropPlacement'] {
+		const [primary] = dropSort.keys;
+		if (primary?.property !== 'file.mtime') return 'sorted';
+		return primary.direction === 'DESC' ? 'first' : 'last';
 	}
 
 	private collectPropertyValues(
@@ -97,8 +154,8 @@ export class BoardViewDataBuilder {
 
 	private getRawNoteValue(entry: BasesEntry, propertyId: BasesPropertyId): unknown {
 		if (!propertyId.startsWith('note.')) return undefined;
-		const propertyKey = getPropertyKeyFromId(propertyId);
-		return Services.app.metadataCache.getFileCache(entry.file)?.frontmatter?.[propertyKey];
+		const frontmatter = Services.app.metadataCache.getFileCache(entry.file)?.frontmatter;
+		return frontmatter?.[findFrontmatterKey(frontmatter, getPropertyKeyFromId(propertyId))];
 	}
 
 	private addEmptyValues(
@@ -161,14 +218,14 @@ export class BoardViewDataBuilder {
 	}
 
 	private populateItems(
-		entries: BasesEntry[],
+		entries: [number, BasesEntry][],
 		groupPropertyId: BasesPropertyId | null | undefined,
 		subGroupPropertyId: BasesPropertyId | null | undefined,
 		hiddenGroups: Set<string>,
 		hiddenSubGroups: Set<string>,
 		items: Record<string, Record<string, BoardItem[]>>,
 	): void {
-		for (const entry of entries) {
+		for (const [rank, entry] of entries) {
 			const groupId = this.getEntryGroupValue(entry, groupPropertyId).id;
 			const subGroupId = subGroupPropertyId
 				? this.getEntryGroupValue(entry, subGroupPropertyId).id
@@ -182,6 +239,7 @@ export class BoardViewDataBuilder {
 				id: entry.file.path,
 				groupId,
 				subGroupId: subGroupId === 'default' ? undefined : subGroupId,
+				rank,
 				data: entry,
 			});
 		}

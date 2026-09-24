@@ -19,3 +19,16 @@ export function isWritablePropertyId(
 ): propertyId is `note.${string}` {
 	return propertyId?.startsWith('note.') ?? false;
 }
+
+/**
+ * Property names are case-insensitive in Obsidian, so a note may store the `status`
+ * property as `Status`. Returns the key the note uses, or `key` when it has none.
+ */
+export function findFrontmatterKey(
+	frontmatter: Readonly<Record<string, unknown>> | null | undefined,
+	key: string,
+): string {
+	if (!frontmatter || Object.prototype.hasOwnProperty.call(frontmatter, key)) return key;
+	const lowerKey = key.toLowerCase();
+	return Object.keys(frontmatter).find((existing) => existing.toLowerCase() === lowerKey) ?? key;
+}

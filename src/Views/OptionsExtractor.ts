@@ -19,6 +19,7 @@ export const BoardOptionKeys = {
 	HIDDEN_SUB_GROUPS: 'hiddenSubGroups',
 	COLLAPSED_SUB_GROUPS: 'collapsedSubGroups',
 	HIDE_IMAGE_PLACEHOLDER: 'hideImagePlaceholder',
+	HIDE_EMPTY_PROPERTIES: 'hideEmptyProperties',
 	NEW_NOTE_FOLDER: 'newNoteFolder',
 	NEW_NOTE_TEMPLATE: 'newNoteTemplate',
 	NEW_NOTE_OPEN: 'newNoteOpen',
@@ -49,6 +50,7 @@ export interface BoardOptions {
 	hiddenSubGroups?: string[];
 	collapsedSubGroups?: string[];
 	hideImagePlaceholder?: boolean;
+	hideEmptyProperties?: boolean;
 	newNoteFolder?: string;
 	newNoteTemplate?: string;
 	newNoteOpen?: boolean;
@@ -161,6 +163,10 @@ export class OptionsExtractor {
 		options.hideImagePlaceholder = readBoolean(
 			this.config.get(BoardOptionKeys.HIDE_IMAGE_PLACEHOLDER),
 			true,
+		);
+		options.hideEmptyProperties = readBoolean(
+			this.config.get(BoardOptionKeys.HIDE_EMPTY_PROPERTIES),
+			false,
 		);
 		options.newNoteFolder =
 			readStringArray(this.config.get(BoardOptionKeys.NEW_NOTE_FOLDER))[0] ?? '';

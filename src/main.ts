@@ -49,7 +49,7 @@ export default class BoardViewPlugin extends Plugin {
 						},
 						{
 							type: 'property',
-							displayName: 'Icon Property',
+							displayName: 'Icon property',
 							key: BoardOptionKeys.ICON_PROPERTY,
 							filter: (prop: string) =>
 								Services.plugin.isPropertyEligibleForGrouping(prop),
@@ -62,17 +62,24 @@ export default class BoardViewPlugin extends Plugin {
 							key: BoardOptionKeys.ICON_MAPPING,
 							default: [],
 							description:
-								'Map property values to icon names. Format: value=icon-name (e.g. bug=bug, feature=sparkles). Use "Board View: Browse icons" command to search icons.',
+								'Map property values to icon names. Format: value=icon-name (e.g. bug=bug, feature=sparkles). Use the "Bases Board: Browse icons" command to search icons.',
 						},
 						{
 							type: 'property',
-							displayName: 'ID Property',
+							displayName: 'ID property',
 							key: BoardOptionKeys.ID_PROPERTY,
 							filter: (prop: string) =>
 								Services.plugin.isPropertyEligibleForGrouping(prop),
 							default: '',
 							description:
 								'Property to show as a muted ID above the card title. Click copies it to clipboard.',
+						},
+						{
+							type: 'toggle',
+							displayName: 'Hide empty properties',
+							key: BoardOptionKeys.HIDE_EMPTY_PROPERTIES,
+							default: false,
+							description: 'Hide properties without a value on cards',
 						},
 					],
 				},
@@ -82,21 +89,21 @@ export default class BoardViewPlugin extends Plugin {
 					items: [
 						{
 							type: 'toggle',
-							displayName: 'Color Headers',
+							displayName: 'Color headers',
 							key: BoardOptionKeys.COLOR_HEADERS,
 							default: true,
 							description: 'Apply color to headers (chips)',
 						},
 						{
 							type: 'toggle',
-							displayName: 'Color Cells',
+							displayName: 'Color cells',
 							key: BoardOptionKeys.COLOR_CELLS,
 							default: false,
 							description: 'Apply color to cells',
 						},
 						{
 							type: 'toggle',
-							displayName: 'Color Cards',
+							displayName: 'Color cards',
 							key: BoardOptionKeys.COLOR_CARDS,
 							default: true,
 							description: 'Apply color to cards (minimal border)',
@@ -149,7 +156,7 @@ export default class BoardViewPlugin extends Plugin {
 				},
 				{
 					type: 'group',
-					displayName: 'Sub-Group',
+					displayName: 'Sub-group',
 					items: [
 						{
 							type: 'property',
@@ -162,7 +169,7 @@ export default class BoardViewPlugin extends Plugin {
 						},
 						{
 							type: 'toggle',
-							displayName: 'Hide empty sub groups',
+							displayName: 'Hide empty sub-groups',
 							key: BoardOptionKeys.HIDE_EMPTY_SUB_GROUPS,
 							default: false,
 							description: 'Hide empty sub group (rows)',
@@ -176,14 +183,14 @@ export default class BoardViewPlugin extends Plugin {
 						},
 						{
 							type: 'multitext',
-							displayName: 'Sub Group order',
+							displayName: 'Sub-group order',
 							key: BoardOptionKeys.SUB_GROUP_ORDER,
 							default: [],
 							description: 'Order of sub group (rows)',
 						},
 						{
 							type: 'multitext',
-							displayName: 'Sub Group labels',
+							displayName: 'Sub-group labels',
 							key: BoardOptionKeys.SUB_GROUP_LABELS,
 							default: [],
 							description: 'Custom display names for sub-groups, format: value=Label',
@@ -214,7 +221,7 @@ export default class BoardViewPlugin extends Plugin {
 				},
 				{
 					type: 'group',
-					displayName: 'New Note',
+					displayName: 'New note',
 					items: [
 						{
 							type: 'multitext',

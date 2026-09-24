@@ -1,6 +1,6 @@
 import Services from 'Base/Services';
 import { Component, Notice, TFile, TFolder } from 'obsidian';
-import { getPropertyKeyFromId, isWritablePropertyId } from 'Utils';
+import { findFrontmatterKey, getPropertyKeyFromId, isWritablePropertyId } from 'Utils';
 import { EMPTY_GROUP_ID } from './BoardConstants';
 import { BoardOptions } from './OptionsExtractor';
 
@@ -210,7 +210,7 @@ export class BoardNoteCreator extends Component {
 			groupValue !== EMPTY_GROUP_ID
 		) {
 			const groupPropertyKey = getPropertyKeyFromId(groupPropertyId);
-			frontmatter[groupPropertyKey] = groupValue;
+			frontmatter[findFrontmatterKey(frontmatter, groupPropertyKey)] = groupValue;
 		}
 
 		if (
@@ -220,7 +220,7 @@ export class BoardNoteCreator extends Component {
 			subGroupValue !== EMPTY_GROUP_ID
 		) {
 			const subGroupPropertyKey = getPropertyKeyFromId(subGroupPropertyId);
-			frontmatter[subGroupPropertyKey] = subGroupValue;
+			frontmatter[findFrontmatterKey(frontmatter, subGroupPropertyKey)] = subGroupValue;
 		}
 	}
 }

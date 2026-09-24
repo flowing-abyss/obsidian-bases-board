@@ -1,5 +1,5 @@
 import type Sortable from 'sortablejs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sortableCreate = vi.hoisted(() =>
 	vi.fn((_element: HTMLElement, _options?: Sortable.Options) => ({
@@ -12,7 +12,8 @@ vi.mock('sortablejs', () => ({
 }));
 
 import { EMPTY_GROUP_ID } from '../src/Views/BoardConstants';
-import { BoardView, BoardViewCallbacks, BoardViewData } from '../src/Views/BoardView';
+import { BoardItem, BoardView, BoardViewCallbacks, BoardViewData } from '../src/Views/BoardView';
+import { CardView } from '../src/Views/CardView';
 
 function createData(title = 'Empty group'): BoardViewData {
 	return {
@@ -22,8 +23,10 @@ function createData(title = 'Empty group'): BoardViewData {
 		items: { [EMPTY_GROUP_ID]: {} },
 		cardOptions: {},
 		cardProperties: [],
+		cardPropertyLabels: {},
 		columnColors: {},
 		collapsedSubGroups: [],
+		dropPlacement: 'sorted',
 	};
 }
 
@@ -44,6 +47,7 @@ function createCallbacks(): BoardViewCallbacks {
 
 describe('BoardView drag isolation', () => {
 	beforeEach(() => sortableCreate.mockClear());
+	afterEach(() => vi.useRealTimers());
 
 	it('drags by the whole card while keeping a unique Sortable group for every board', () => {
 		const first = new BoardView(document.body.createDiv());
@@ -57,6 +61,7 @@ describe('BoardView drag isolation', () => {
 		expect(firstOptions?.handle).toBeUndefined();
 		expect(firstOptions?.forceFallback).not.toBe(true);
 		expect(firstOptions?.filter).toContain('.board-card-open');
+		expect(firstOptions?.filter).toContain('.multi-select-pill');
 		const firstGroup = firstOptions?.group;
 		const secondGroup = secondOptions?.group;
 		expect(typeof firstGroup).toBe('object');
@@ -394,6 +399,196 @@ describe('BoardView drag isolation', () => {
 		board.destroy();
 	});
 
+	it('holds data updates while a card property editor has focus', async () => {
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const callbacks = createCallbacks();
+		board.render(createData('Before edit'), callbacks);
+		const editor = container
+			.querySelector('.board-cell')
+			?.createDiv({ cls: 'board-card-property-editor' })
+			.createDiv({ attr: { contenteditable: 'true', tabindex: '0' } });
+		editor?.focus();
+		expect(document.activeElement).toBe(editor);
+
+		board.render(createData('After edit'), callbacks);
+		expect(container.textContent).toContain('Before edit');
+		expect(container.contains(editor ?? null)).toBe(true);
+
+		editor?.blur();
+		await vi.waitFor(() => expect(container.textContent).toContain('After edit'));
+		board.destroy();
+	});
+
+	it('holds a finished edit until the click that ended it has landed', async () => {
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const callbacks = createCallbacks();
+		board.render(createData('Before edit'), callbacks);
+		const cell = container.querySelector<HTMLElement>('.board-cell');
+		const editor = cell
+			?.createDiv({ cls: 'board-card-property-editor' })
+			.createDiv({ attr: { contenteditable: 'true', tabindex: '0' } });
+		const button = cell?.createEl('button');
+		const clicked = vi.fn();
+		button?.addEventListener('click', clicked);
+		editor?.focus();
+		board.render(createData('After edit'), callbacks);
+		const settle = () => new Promise((resolve) => window.setTimeout(resolve, 0));
+
+		// Pressing another control moves focus away from the editor before the click
+		button?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+		button?.focus();
+		await settle();
+		expect(container.contains(button ?? null)).toBe(true);
+
+		button?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+		button?.click();
+		expect(clicked).toHaveBeenCalledTimes(1);
+		await settle();
+		expect(container.textContent).toContain('After edit');
+		board.destroy();
+	});
+
+	it('renders a held update when a press ends without a click', () => {
+		vi.useFakeTimers();
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const callbacks = createCallbacks();
+		board.render(createData('Before press'), callbacks);
+
+		container.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+		board.render(createData('After press'), callbacks);
+		expect(container.textContent).toContain('Before press');
+
+		document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+		vi.advanceTimersByTime(299);
+		expect(container.textContent).toContain('Before press');
+		vi.advanceTimersByTime(1);
+		vi.runOnlyPendingTimers();
+		expect(container.textContent).toContain('After press');
+		board.destroy();
+		vi.useRealTimers();
+	});
+
+	it('stops waiting for a click once the board is destroyed', () => {
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const removeEventListener = vi.spyOn(document, 'removeEventListener');
+
+		container.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+		board.destroy();
+
+		const removed = removeEventListener.mock.calls.map(([eventName]) => eventName);
+		expect(removed).toEqual(expect.arrayContaining(['pointerup', 'pointercancel', 'click']));
+		removeEventListener.mockRestore();
+	});
+
+	it('keeps keyboard focus on the card title across a render', () => {
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const data = createData();
+		data.items = {
+			[EMPTY_GROUP_ID]: {
+				default: [{ id: 'a.md', groupId: EMPTY_GROUP_ID, rank: 0, data: {} } as BoardItem],
+			},
+		};
+		const cardView = vi.spyOn(CardView.prototype, 'render').mockImplementation(() => {
+			const card = createDiv({ cls: 'board-card', attr: { 'data-path': 'a.md' } });
+			card.createDiv({ cls: 'board-card-open', attr: { tabindex: '0' } });
+			return card;
+		});
+		board.render(data, createCallbacks());
+		container.querySelector<HTMLElement>('.board-card-open')?.focus();
+
+		board.render(data, createCallbacks());
+		const title = container.querySelector('.board-card-open');
+		expect(title).not.toBeNull();
+		expect(document.activeElement).toBe(title);
+		cardView.mockRestore();
+		board.destroy();
+	});
+
+	it('renders over a focused checkbox and keeps focus on its property row', () => {
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const callbacks = createCallbacks();
+		const withCard = (title: string) => {
+			const data = createData(title);
+			data.items = {
+				[EMPTY_GROUP_ID]: {
+					default: [
+						{ id: 'a.md', groupId: EMPTY_GROUP_ID, rank: 0, data: {} } as BoardItem,
+					],
+				},
+			};
+			return data;
+		};
+		const cardView = vi.spyOn(CardView.prototype, 'render').mockImplementation(() => {
+			const card = createDiv({ cls: 'board-card', attr: { 'data-path': 'a.md' } });
+			card.createDiv({
+				cls: 'board-card-property-editor',
+				attr: { 'data-board-property': 'note.done' },
+			}).createEl('input', { type: 'checkbox' });
+			return card;
+		});
+		board.render(withCard('Before'), callbacks);
+		container.querySelector<HTMLElement>('input[type="checkbox"]')?.focus();
+
+		// A ticked box moves its card, which must not wait for focus to leave it
+		board.render(withCard('After'), callbacks);
+		expect(container.textContent).toContain('After');
+		expect(document.activeElement).toBe(
+			container.querySelector('[data-board-property="note.done"]'),
+		);
+		cardView.mockRestore();
+		board.destroy();
+	});
+
+	it("cancels the browser's drop of the dragged card's text", () => {
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		board.render(createData(), createCallbacks());
+		const cell = container.querySelector<HTMLElement>('.board-cell');
+		if (!cell) throw new Error('Expected BoardView to render a cell');
+		const drop = () => {
+			const event = new Event('drop', { bubbles: true, cancelable: true });
+			cell.dispatchEvent(event);
+			return event.defaultPrevented;
+		};
+
+		expect(drop()).toBe(false);
+		sortableCreate.mock.calls[0]?.[1]?.onChoose?.({
+			from: cell,
+			item: cell,
+		} as unknown as Sortable.SortableEvent);
+		expect(drop()).toBe(true);
+		board.destroy();
+	});
+
+	it('never replays a queued render over newer data', async () => {
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const callbacks = createCallbacks();
+		board.render(createData('Before edit'), callbacks);
+		const editor = container
+			.querySelector('.board-cell')
+			?.createDiv({ cls: 'board-card-property-editor' })
+			.createDiv({ attr: { contenteditable: 'true', tabindex: '0' } });
+		editor?.focus();
+		board.render(createData('Queued'), callbacks);
+
+		// Focus can vanish without a blur, e.g. when the editor is removed
+		editor?.remove();
+		board.render(createData('Latest'), callbacks);
+		container.dispatchEvent(new FocusEvent('blur'));
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+		expect(container.textContent).toContain('Latest');
+		expect(container.textContent).not.toContain('Queued');
+		board.destroy();
+	});
+
 	it('moves a whole card between cells without requiring a handle', async () => {
 		const container = document.body.createDiv();
 		const board = new BoardView(container);
@@ -433,6 +628,170 @@ describe('BoardView drag isolation', () => {
 			null,
 		);
 		board.destroy();
+	});
+
+	it("previews a card at the place the base's sort will give it", () => {
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const data = createData();
+		data.groupPropertyId = 'note.status';
+		data.columns = [
+			{ id: 'todo', title: 'Todo', rawValue: 'todo', count: 3 },
+			{ id: 'done', title: 'Done', rawValue: 'done', count: 1 },
+		];
+		const item = (id: string, groupId: string, rank: number) =>
+			({ id, groupId, rank, data: {} }) as BoardItem;
+		data.items = {
+			todo: {
+				default: [
+					item('a.md', 'todo', 0),
+					item('c.md', 'todo', 2),
+					item('e.md', 'todo', 4),
+				],
+			},
+			done: { default: [item('d.md', 'done', 3)] },
+		};
+		const cardView = vi
+			.spyOn(CardView.prototype, 'render')
+			.mockImplementation(() => createDiv('board-card'));
+		board.render(data, createCallbacks());
+		cardView.mockRestore();
+
+		const [todo, done] = Array.from(container.querySelectorAll<HTMLElement>('.board-cell'));
+		const dragged = done?.querySelector<HTMLElement>('.board-card');
+		const options = sortableCreate.mock.calls[0]?.[1];
+		expect(todo && dragged && options).toBeTruthy();
+		if (!todo || !dragged || !options) return;
+		const idsIn = (cell: HTMLElement) =>
+			Array.from(cell.querySelectorAll<HTMLElement>('.board-card')).map(
+				(el) => el.dataset.itemId,
+			);
+
+		// Sortable may insert the card anywhere under the pointer; it then moves to its sorted place
+		expect(
+			options.onMove?.(
+				{ dragged, to: todo } as unknown as Sortable.MoveEvent,
+				new Event('dragover'),
+			),
+		).toBe(true);
+		todo.prepend(dragged);
+		options.onChange?.({
+			item: dragged,
+			from: done,
+			to: todo,
+		} as unknown as Sortable.SortableEvent);
+		expect(idsIn(todo)).toEqual(['a.md', 'c.md', 'd.md', 'e.md']);
+
+		// Pointer moves inside the cell do not reorder it
+		expect(
+			options.onMove?.(
+				{ dragged, to: todo } as unknown as Sortable.MoveEvent,
+				new Event('dragover'),
+			),
+		).toBe(false);
+		board.destroy();
+	});
+
+	it('previews a card at an end of the cell when the base sorts by modified time', () => {
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const data = createData();
+		data.columns = [{ id: 'todo', title: 'Todo', rawValue: 'todo', count: 2 }];
+		data.items = {
+			todo: {
+				default: [
+					{ id: 'a.md', groupId: 'todo', rank: 0, data: {} } as BoardItem,
+					{ id: 'b.md', groupId: 'todo', rank: 1, data: {} } as BoardItem,
+				],
+			},
+		};
+		const cardView = vi
+			.spyOn(CardView.prototype, 'render')
+			.mockImplementation(() => createDiv('board-card'));
+		const cells = () => Array.from(container.querySelectorAll<HTMLElement>('.board-cell'));
+		const ids = (cell: HTMLElement | undefined) =>
+			Array.from(cell?.querySelectorAll<HTMLElement>('.board-card') ?? []).map(
+				(el) => el.dataset.itemId,
+			);
+		const source = document.body.createDiv('board-cell');
+
+		for (const [placement, expected] of [
+			['first', ['moved.md', 'a.md', 'b.md']],
+			['last', ['a.md', 'b.md', 'moved.md']],
+		] as const) {
+			sortableCreate.mockClear();
+			board.render({ ...data, dropPlacement: placement }, createCallbacks());
+			const cell = cells()[0];
+			const dragged = createDiv({ cls: 'board-card', attr: { 'data-item-id': 'moved.md' } });
+			cell?.insertBefore(dragged, cell.children[1] ?? null);
+			sortableCreate.mock.calls[0]?.[1]?.onChange?.({
+				item: dragged,
+				from: source,
+				to: cell,
+			} as unknown as Sortable.SortableEvent);
+			expect(ids(cell)).toEqual(expected);
+		}
+		cardView.mockRestore();
+		board.destroy();
+	});
+
+	it('scrolls a long cell to the landing place once the card stays there', async () => {
+		vi.useFakeTimers();
+		const scroller = document.body.createDiv();
+		scroller.setCssStyles({ overflowY: 'auto' });
+		Object.defineProperties(scroller, {
+			clientHeight: { configurable: true, value: 400 },
+			scrollHeight: { configurable: true, value: 1200 },
+		});
+		const rect = (top: number, height: number) =>
+			({ top, bottom: top + height, height, left: 0, right: 200, width: 200 }) as DOMRect;
+		vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue(rect(0, 400));
+		const scrollBy = vi.fn();
+		scroller.scrollBy = scrollBy;
+		const board = new BoardView(scroller.createDiv());
+		const data = createData();
+		data.columns = [{ id: 'todo', title: 'Todo', rawValue: 'todo', count: 0 }];
+		data.items = { todo: { default: [] } };
+		board.render(data, createCallbacks());
+		const cell = scroller.querySelector<HTMLElement>('.board-cell');
+		const options = sortableCreate.mock.calls[0]?.[1];
+		if (!cell || !options) throw new Error('Expected BoardView to render a sortable cell');
+		const source = document.body.createDiv('board-cell');
+		const card = cell.createDiv('board-card');
+		const cardTop = vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(rect(600, 100));
+		const enterCell = () =>
+			options.onChange?.({
+				item: card,
+				from: source,
+				to: cell,
+			} as unknown as Sortable.SortableEvent);
+
+		options.onChoose?.({ from: source, item: card } as unknown as Sortable.SortableEvent);
+		enterCell();
+		vi.advanceTimersByTime(200);
+		expect(scrollBy).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(50);
+		expect(scrollBy).toHaveBeenCalledWith(expect.objectContaining({ top: 308 }));
+
+		scrollBy.mockClear();
+		cardTop.mockReturnValue(rect(-150, 100));
+		enterCell();
+		vi.advanceTimersByTime(250);
+		expect(scrollBy).toHaveBeenCalledWith(expect.objectContaining({ top: -158 }));
+
+		// A card that is already visible, or a drag that ends first, keeps the scroll
+		scrollBy.mockClear();
+		cardTop.mockReturnValue(rect(100, 100));
+		enterCell();
+		vi.advanceTimersByTime(250);
+		cardTop.mockReturnValue(rect(600, 100));
+		enterCell();
+		options.onUnchoose?.({ from: source, item: card } as unknown as Sortable.SortableEvent);
+		await Promise.resolve();
+		vi.advanceTimersByTime(250);
+		expect(scrollBy).not.toHaveBeenCalled();
+		board.destroy();
+		vi.useRealTimers();
 	});
 
 	it('preserves a null raw value when moving into the empty-value column', async () => {
@@ -523,7 +882,6 @@ describe('BoardView drag isolation', () => {
 		expect(card.classList.contains('board-sortable-chosen')).toBe(false);
 		expect(card.classList.contains('board-sortable-ghost')).toBe(false);
 		expect(cell.classList.contains('board-drag-source')).toBe(false);
-		expect(options?.onMove).toBeUndefined();
 		board.destroy();
 	});
 

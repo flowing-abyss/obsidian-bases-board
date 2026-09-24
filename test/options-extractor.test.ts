@@ -32,5 +32,12 @@ describe('OptionsExtractor boolean defaults', () => {
 		expect(options.hideImagePlaceholder).toBe(true);
 		expect(options.colorCells).toBe(false);
 		expect(options.newNoteOpen).toBe(false);
+		expect(options.hideEmptyProperties).toBe(false);
+	});
+
+	it('reads the hide empty properties toggle', () => {
+		const config = createConfig({ [BoardOptionKeys.HIDE_EMPTY_PROPERTIES]: true });
+
+		expect(new OptionsExtractor(config).extract().hideEmptyProperties).toBe(true);
 	});
 });

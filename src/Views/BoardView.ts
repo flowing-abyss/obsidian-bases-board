@@ -2,14 +2,18 @@ import { BasesEntry, Menu, Notice, setIcon } from 'obsidian';
 import Sortable from 'sortablejs';
 import { wrapEmbeddedBasesLinks } from './BasesLinkCompatibility';
 import { EMPTY_GROUP_ID } from './BoardConstants';
+import { collectCoverVideos, CoverVideos } from './CardCover';
 import { CardView } from './CardView';
 import { ColorManager } from './ColorManager';
 import { BoardOptions } from './OptionsExtractor';
+import { PROPERTY_EDITOR_CLASS } from './PropertyEditor';
+import { focusPropertyRow } from './PropertyView';
 
 export interface BoardItem {
 	id: string;
 	groupId: string;
 	subGroupId?: string;
+	rank: number; // position in the base's sorted results
 	data: BasesEntry;
 }
 
@@ -35,8 +39,11 @@ export interface BoardViewData {
 	items: Record<string, Record<string, BoardItem[]>>; // groupId -> subGroupId -> items
 	cardOptions: BoardOptions;
 	cardProperties: string[];
+	cardPropertyLabels: Record<string, string>; // property ID -> tooltip label
 	columnColors: Record<string, string>;
 	collapsedSubGroups: string[];
+	// Where a card dropped into another cell will land once the base re-sorts
+	dropPlacement: 'sorted' | 'first' | 'last';
 }
 
 export interface BoardViewCallbacks {
@@ -58,6 +65,12 @@ export interface BoardViewCallbacks {
 	onToggleCollapsedSubGroup: (subGroupId: string, collapsed: boolean) => void;
 }
 
+// A card's title, or one of its property rows
+interface CardFocus {
+	path: string;
+	property?: string;
+}
+
 interface CardDropPayload {
 	itemId: string;
 	groupPropertyId: string;
@@ -69,8 +82,25 @@ interface CardDropPayload {
 const COLUMN_COLORS = ColorManager.getColorNames().map(
 	(name) => name.charAt(0).toUpperCase() + name.slice(1),
 );
+// Only interactive parts block dragging; empty card space, including the rest of a
+// property row, stays a drag handle.
 const DRAG_FILTER_SELECTOR =
-	'a, button, input, textarea, select, [contenteditable="true"], .internal-link, .external-link, [data-href], .board-card-open';
+	'a, button, input, textarea, select, video, [contenteditable="true"], .internal-link, .external-link, [data-href], .board-card-open, .multi-select-pill, .clickable-icon';
+// How long a dragged card stays in a cell before the board scrolls to its landing place,
+// so sweeping across columns does not make the board jump
+const REVEAL_DROP_DELAY_MS = 250;
+const REVEAL_DROP_MARGIN_PX = 8;
+// Touch browsers dispatch the click some time after pointerup
+const CLICK_AFTER_POINTERUP_MS = 300;
+// Fields of a property editor that take typing, which a render would discard
+const EDITOR_TEXT_FIELD = [
+	'[contenteditable="true"]',
+	'input:not([type="checkbox"])',
+	'textarea',
+	'select',
+]
+	.map((field) => `.${PROPERTY_EDITOR_CLASS} ${field}`)
+	.join(', ');
 
 interface DocumentDragState {
 	activeBoards: Set<BoardView>;
@@ -99,6 +129,12 @@ export class BoardView {
 	private readonly dragGroupName = `bases-board-${++boardInstanceCounter}`;
 	private readonly documentDragState: DocumentDragState;
 	private pendingRender: { data: BoardViewData; callbacks: BoardViewCallbacks } | null = null;
+	private itemRanks = new Map<string, number>();
+	private revealDropTimer: number | null = null;
+	private pointerHeld = false;
+	// Ends a hold early, so a destroyed board drops its document listeners
+	private releasePointerHold: (() => void) | null = null;
+	private coverVideos: CoverVideos | undefined;
 	private linkCompatibilityFrame: number | null = null;
 	private dragSessionId = 0;
 	private dragSettleScheduled = false;
@@ -133,6 +169,46 @@ export class BoardView {
 		this.updateVerticalAutoScroll(event.clientY);
 		event.stopPropagation();
 	};
+	private readonly renderAfterPropertyEdit = (): void => {
+		if (!this.pendingRender) return;
+		// Focus lands on its next target after blur, so check once it has settled
+		this.container.ownerDocument.defaultView?.setTimeout(() => {
+			if (!this.disposed && !this.pointerHeld && !this.isEditingProperty()) {
+				this.flushPendingRender();
+			}
+		}, 0);
+	};
+	// A click never arrives when its target is rebuilt between pointerdown and click,
+	// which is exactly when a finished edit hands its queued render over
+	private readonly holdRenderUntilClick = (): void => {
+		if (this.pointerHeld) return;
+		this.pointerHeld = true;
+		const doc = this.container.ownerDocument;
+		const ownerWindow = doc.defaultView;
+		let fallbackTimer: number | undefined;
+		const release = (): void => {
+			doc.removeEventListener('pointerup', waitForClick, true);
+			doc.removeEventListener('pointercancel', release, true);
+			doc.removeEventListener('click', release, true);
+			ownerWindow?.clearTimeout(fallbackTimer);
+			this.releasePointerHold = null;
+			this.pointerHeld = false;
+			this.renderAfterPropertyEdit();
+		};
+		// A drag or a vanished target ends without a click
+		const waitForClick = (): void => {
+			fallbackTimer = ownerWindow?.setTimeout(release, CLICK_AFTER_POINTERUP_MS);
+		};
+		doc.addEventListener('pointerup', waitForClick, true);
+		doc.addEventListener('pointercancel', release, true);
+		doc.addEventListener('click', release, true);
+		this.releasePointerHold = release;
+	};
+	// Sortable cancels the browser's drop on the main window's document only, so in a
+	// popout the card's text would land in the field under the pointer
+	private readonly preventOwnedDrop = (event: DragEvent): void => {
+		if (this.isDragging) event.preventDefault();
+	};
 
 	constructor(container: HTMLElement) {
 		this.container = container;
@@ -145,13 +221,21 @@ export class BoardView {
 		);
 		this.container.addEventListener('dragstart', this.stopOwnedCardDragFromBubbling);
 		this.container.addEventListener('dragover', this.stopActiveNativeDragOverFromBubbling);
+		// Captured blur, unlike focusout, still arrives when a widget rebuilds its field on blur
+		this.container.addEventListener('blur', this.renderAfterPropertyEdit, true);
+		this.container.addEventListener('pointerdown', this.holdRenderUntilClick, true);
+		this.container.addEventListener('drop', this.preventOwnedDrop, true);
 	}
 
 	public render(data: BoardViewData, callbacks: BoardViewCallbacks) {
-		if (this.isDragging) {
+		// Rebuilding the cards would drop the focused editor and any unsaved input, or
+		// the target of a click in progress
+		if (this.isDragging || this.pointerHeld || this.isEditingProperty()) {
 			this.pendingRender = { data, callbacks };
 			return;
 		}
+		// This data supersedes anything still queued, which must not replay later
+		this.pendingRender = null;
 		this.data = data;
 
 		// Capture scroll position
@@ -163,8 +247,11 @@ export class BoardView {
 			scrollLeft = existingWrapper.scrollLeft;
 		}
 
+		const cardFocus = this.getCardFocus();
+		this.coverVideos = collectCoverVideos(this.container);
 		this.destroySortables();
 		this.container.empty();
+		this.itemRanks.clear();
 
 		const wrapper = this.container.createDiv('board-board-wrapper');
 		if (data.cardOptions.cardSize) {
@@ -277,7 +364,37 @@ export class BoardView {
 			wrapper.scrollLeft = scrollLeft;
 		}
 
+		this.coverVideos = undefined;
+		if (cardFocus) this.restoreCardFocus(wrapper, cardFocus);
 		this.scheduleLinkCompatibilityPass(wrapper);
+	}
+
+	// A render right after an edit would otherwise leave keyboard focus on a removed
+	// title or property row
+	private getCardFocus(): CardFocus | undefined {
+		const active = this.container.ownerDocument.activeElement;
+		if (!active || !this.container.contains(active)) return undefined;
+		const path = active.closest<HTMLElement>('.board-card')?.dataset.path;
+		if (!path) return undefined;
+		if (active.matches('.board-card-open')) return { path };
+		const property =
+			active.closest<HTMLElement>('[data-board-property]')?.dataset.boardProperty;
+		return property ? { path, property } : undefined;
+	}
+
+	private restoreCardFocus(root: HTMLElement, { path, property }: CardFocus): void {
+		const card = Array.from(root.querySelectorAll<HTMLElement>('.board-card')).find(
+			(el) => el.dataset.path === path,
+		);
+		if (!card) return;
+		if (property === undefined) {
+			card.querySelector<HTMLElement>('.board-card-open')?.focus({ preventScroll: true });
+			return;
+		}
+		const row = Array.from(card.querySelectorAll<HTMLElement>('[data-board-property]')).find(
+			(el) => el.dataset.boardProperty === property,
+		);
+		if (row) focusPropertyRow(row);
 	}
 
 	private renderRow(
@@ -419,6 +536,8 @@ export class BoardView {
 				const cardView = new CardView({
 					options: this.data.cardOptions,
 					properties: this.data.cardProperties,
+					propertyLabels: this.data.cardPropertyLabels,
+					coverVideos: this.coverVideos,
 					colorName: effectiveColorName,
 					cardColorMode: cardColorMode,
 				});
@@ -431,6 +550,7 @@ export class BoardView {
 				}
 				cardEl.setAttribute('data-item-id', item.id);
 				cardEl.setAttribute('data-board-owner', this.dragGroupName);
+				this.itemRanks.set(item.id, item.rank);
 
 				cell.appendChild(cardEl);
 			}
@@ -482,6 +602,15 @@ export class BoardView {
 			sort: false, // Disable sorting to prevent items from shifting
 			filter: DRAG_FILTER_SELECTOR,
 			preventOnFilter: false,
+			// In another cell the base's sort decides the card's place, not the pointer.
+			// Sortable inserts the card on entry, onChange moves it to that place, and
+			// onMove keeps it there while the pointer moves inside the cell.
+			onMove: (evt) => evt.dragged.parentElement !== evt.to,
+			onChange: (evt) => {
+				if (evt.from === evt.to) return;
+				this.placeAtSortedPosition(evt.item, evt.to);
+				this.scheduleRevealDrop(evt.item, evt.to);
+			},
 			ghostClass: 'board-sortable-ghost',
 			chosenClass: 'board-sortable-chosen',
 			onChoose: () => {
@@ -582,6 +711,10 @@ export class BoardView {
 		);
 		this.container.removeEventListener('dragstart', this.stopOwnedCardDragFromBubbling);
 		this.container.removeEventListener('dragover', this.stopActiveNativeDragOverFromBubbling);
+		this.container.removeEventListener('blur', this.renderAfterPropertyEdit, true);
+		this.container.removeEventListener('pointerdown', this.holdRenderUntilClick, true);
+		this.container.removeEventListener('drop', this.preventOwnedDrop, true);
+		this.releasePointerHold?.();
 		this.dragSessionId += 1;
 		this.finishDragState();
 		this.documentDragState.instances.delete(this);
@@ -593,6 +726,7 @@ export class BoardView {
 	}
 
 	private finishDragState(): void {
+		this.cancelRevealDrop();
 		this.isDragging = false;
 		this.dragStarted = false;
 		this.documentDragState.activeBoards.delete(this);
@@ -758,6 +892,87 @@ export class BoardView {
 			sortable.destroy();
 		}
 		this.sortables = [];
+	}
+
+	private placeAtSortedPosition(card: HTMLElement, cell: HTMLElement): void {
+		const cards = Array.from(cell.children).filter(
+			(el): el is HTMLElement => el !== card && el.matches('.board-card'),
+		);
+		const anchor = cards[this.getDropIndex(card, cards)];
+		if (anchor) {
+			if (card.nextElementSibling !== anchor) cell.insertBefore(card, anchor);
+			return;
+		}
+		const last = cards[cards.length - 1];
+		if (last) last.after(card);
+		else cell.prepend(card);
+	}
+
+	// In a long cell the landing place can be off screen
+	private scheduleRevealDrop(card: HTMLElement, cell: HTMLElement): void {
+		this.cancelRevealDrop();
+		const ownerWindow = this.container.ownerDocument.defaultView;
+		if (!ownerWindow) return;
+		this.revealDropTimer = ownerWindow.setTimeout(() => {
+			this.revealDropTimer = null;
+			if (this.disposed || !this.isDragging || card.parentElement !== cell) return;
+			this.revealVertically(card);
+		}, REVEAL_DROP_DELAY_MS);
+	}
+
+	private cancelRevealDrop(): void {
+		if (this.revealDropTimer === null) return;
+		this.container.ownerDocument.defaultView?.clearTimeout(this.revealDropTimer);
+		this.revealDropTimer = null;
+	}
+
+	// Vertical only: a sideways scroll would move the pointer onto another column and
+	// send the card there. Scrolling toward the card keeps the pointer in its cell.
+	private revealVertically(card: HTMLElement): void {
+		const ownerWindow = this.container.ownerDocument.defaultView;
+		if (!ownerWindow) return;
+		let scroller = card.parentElement;
+		while (scroller) {
+			const { overflowY } = ownerWindow.getComputedStyle(scroller);
+			const scrollable = overflowY === 'auto' || overflowY === 'scroll';
+			if (scrollable && scroller.scrollHeight > scroller.clientHeight) break;
+			scroller = scroller.parentElement;
+		}
+		if (!scroller) return;
+
+		const view = scroller.getBoundingClientRect();
+		// Column headers stick to the top of the board's own scroller
+		const header = scroller.matches('.board-board-wrapper')
+			? scroller.querySelector(':scope > .board-column-headers')
+			: null;
+		const top =
+			view.top + (header?.getBoundingClientRect().height ?? 0) + REVEAL_DROP_MARGIN_PX;
+		const bottom = view.bottom - REVEAL_DROP_MARGIN_PX;
+		const target = card.getBoundingClientRect();
+		let delta = 0;
+		if (target.top < top) delta = target.top - top;
+		else if (target.bottom > bottom) delta = Math.min(target.bottom - bottom, target.top - top);
+		if (delta === 0) return;
+
+		const reduceMotion =
+			ownerWindow.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+		scroller.scrollBy({ top: delta, behavior: reduceMotion ? 'instant' : 'smooth' });
+	}
+
+	private getDropIndex(card: HTMLElement, cards: HTMLElement[]): number {
+		const { dropPlacement } = this.data;
+		if (dropPlacement === 'first') return 0;
+		if (dropPlacement === 'last') return cards.length;
+		// Only the group values change, so neighbours keep their order relative to the card
+		const rankOf = (el: HTMLElement) => this.itemRanks.get(el.dataset.itemId ?? '') ?? Infinity;
+		const rank = rankOf(card);
+		return cards.filter((el) => rankOf(el) < rank).length;
+	}
+
+	// A focused checkbox or pill has no input to lose, so it does not hold back renders
+	private isEditingProperty(): boolean {
+		const active = this.container.ownerDocument.activeElement;
+		return !!active && this.container.contains(active) && active.matches(EDITOR_TEXT_FIELD);
 	}
 
 	private flushPendingRender(): boolean {

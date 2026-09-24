@@ -1,6 +1,7 @@
-import { BasesEntry, Menu, Modal, Notice } from 'obsidian';
+import { BasesEntry, BasesPropertyId, Menu, Modal, Notice, setTooltip } from 'obsidian';
 import { getPropertyKeyFromId } from 'Utils';
 import Services from '../Base/Services';
+import { CoverVideos, renderCardCover } from './CardCover';
 import { ColorManager } from './ColorManager';
 import { BoardOptions } from './OptionsExtractor';
 import { PropertyView } from './PropertyView';
@@ -8,13 +9,17 @@ import { PropertyView } from './PropertyView';
 interface CardViewContext {
 	options: BoardOptions;
 	properties: string[]; // properties to display (order)
+	propertyLabels?: Record<string, string>; // property ID -> tooltip label
 	colorName?: string | null;
+	coverVideos?: CoverVideos; // videos of the previous render, reused by source
 	cardColorMode?: 'none' | 'minimal' | 'full';
 }
 
 export class CardView {
 	private options: BoardOptions;
 	private properties: string[];
+	private propertyLabels: Record<string, string>;
+	private coverVideos?: CoverVideos;
 	private colorName?: string | null;
 	private cardColorMode: 'none' | 'minimal' | 'full';
 
@@ -24,6 +29,8 @@ export class CardView {
 		// Always ensure file.name is first in the properties list
 		const otherProperties = ctx.properties.filter((p) => p !== 'file.name');
 		this.properties = ['file.name', ...otherProperties];
+		this.propertyLabels = ctx.propertyLabels ?? {};
+		this.coverVideos = ctx.coverVideos;
 
 		this.colorName = ctx.colorName;
 		this.cardColorMode = ctx.cardColorMode || 'none';
@@ -49,6 +56,8 @@ export class CardView {
 		};
 
 		card.addEventListener('contextmenu', (evt) => {
+			// Pills and other editors open their own menu
+			if (evt.defaultPrevented) return;
 			evt.preventDefault();
 			this.showFileMenu(entry, evt.pageX, evt.pageY);
 		});
@@ -70,23 +79,13 @@ export class CardView {
 
 		// optional image
 		if (this.options.imageProperty) {
-			const imageProperty = entry.getValue(this.options.imageProperty);
-			if (imageProperty?.isTruthy()) {
-				const data = imageProperty?.toString();
-				const imgSrc = String(data);
-				const img = createEl('img', { cls: 'card-image' });
-				img.src = imgSrc; // validate local/remote paths
-				img.alt = '';
-				img.loading = 'lazy';
-				img.decoding = 'async';
-				card.appendChild(img);
-			} else {
-				// Placeholder
-				if (!this.options.hideImagePlaceholder) {
-					const placeholder = createDiv({ cls: ['card-image', 'placeholder'] });
-					card.appendChild(placeholder);
-				}
-			}
+			renderCardCover(
+				card,
+				entry.getValue(this.options.imageProperty),
+				entry.file.path,
+				!this.options.hideImagePlaceholder,
+				this.coverVideos,
+			);
 		}
 
 		// ID badge above title
@@ -145,11 +144,8 @@ export class CardView {
 			options: this.options,
 		});
 
-		for (const prop of this.properties) {
-			const propEl = propertyView.render(
-				entry,
-				prop as `note.${string}` | `formula.${string}` | `file.${string}`,
-			);
+		for (const prop of this.properties as BasesPropertyId[]) {
+			const propEl = propertyView.render(entry, prop);
 			if (propEl) {
 				if (prop === 'file.name') {
 					propEl.addClass('board-card-open');
@@ -167,6 +163,11 @@ export class CardView {
 						evt.stopPropagation();
 						void openCard();
 					});
+				} else {
+					// Cards show values only, so the name is a hover away
+					const label = this.propertyLabels[prop] ?? getPropertyKeyFromId(prop);
+					setTooltip(propEl, label, { placement: 'top' });
+					propertyView.makeEditable(propEl, entry, prop);
 				}
 				card.appendChild(propEl);
 			}

@@ -109,8 +109,8 @@
 }
 
 .board-card.has-plugin-color-border {
-	border-left: 4px solid color-mix(in srgb, var(--active-color) 100%, transparent);
-	padding-left: 8px;
+	border-inline-start: 4px solid color-mix(in srgb, var(--active-color) 100%, transparent);
+	padding-inline-start: 8px;
 }
 
 /* Cells/headers use lower opacity via color-mix */
@@ -212,6 +212,16 @@
 }
 
 .board-card {
+	/* One text inset for every row, equal to the inner padding of property editors */
+	--board-card-inset: var(--size-4-2);
+	/* Rows are as tall as the lines of Bases' own cards, whether they show a value or
+	   its editor, so the spacing stays even and clicking a value does not move the card */
+	--input-height: var(--bases-cards-line-height, var(--size-4-6));
+	--metadata-input-padding: var(--size-2-1) var(--board-card-inset);
+	--metadata-input-font-size: var(--font-ui-small);
+	/* Empty row space drags the card, so it must not look like an input on hover */
+	--metadata-property-box-shadow-hover: none;
+	--metadata-property-background-hover: transparent;
 	width: 100%;
 	background: var(--background-secondary);
 	border: 1px solid var(--board-card-divider);
@@ -249,8 +259,57 @@
 	cursor: pointer;
 }
 
-.board-card .metadata-property-value .metadata-input-longtext {
-	min-height: 28px;
+/* Read-only values line up with the text inside editors. */
+.board-card > .card-prop:not(.file-name) {
+	padding-inline: var(--board-card-inset);
+}
+
+/* Read-only inputs such as dates read as text, as in Bases' own cards, and pass
+   clicks to the row so it can start editing. */
+.board-card > .card-prop:not(.file-name) input:disabled:not([type='checkbox']) {
+	--input-border-width: 0;
+	width: auto;
+	min-height: 0;
+	padding: 0;
+	background: transparent;
+	pointer-events: none;
+}
+
+/* Editors hug their content, so the rest of a property row stays a drag handle. */
+.board-card .board-card-property-editor .metadata-input-longtext {
+	flex: 0 1 auto;
+	width: fit-content;
+	min-width: 3em;
+	max-width: 100%;
+}
+
+.board-card .board-card-property-editor .multi-select-container {
+	cursor: inherit;
+}
+
+/* The row is marked as a Bases table cell for Supercharged Links only. */
+.board-card .board-card-property-editor.bases-table-cell {
+	width: auto;
+	height: auto;
+}
+
+/* Editors on a card stay as quiet as values until the pointer is over them. */
+@media (hover: hover) and (pointer: fine) {
+	.board-card:not(:hover) .board-card-property-editor [placeholder]:empty:not(:focus)::before {
+		visibility: hidden;
+	}
+
+	/* Remove buttons take no room until their row is in use, so pills stay even */
+	.board-card
+		.board-card-property-editor:not(:hover, :focus-within)
+		.multi-select-pill-remove-button {
+		display: none;
+	}
+
+	/* The button otherwise pads the end of a pill */
+	.board-card .board-card-property-editor:not(:hover, :focus-within) .multi-select-pill-content {
+		margin-inline-end: var(--pill-padding-x);
+	}
 }
 
 .board-card .metadata-property-value .clickable-icon {
@@ -258,9 +317,11 @@
 	/* Remove padding on date icon which forces height */
 }
 
-/* Match Obsidian's embedded Bases card markup without changing link layout. */
+/* Match Obsidian's embedded Bases card markup without changing link layout.
+   Its lines stay on one line in Bases cards; here a long link wraps instead of being cut. */
 .board-card .board-embedded-link {
 	display: inline;
+	white-space: normal;
 }
 
 /* Let integration-provided colors on the native line reach its inner link. */
@@ -300,9 +361,15 @@
 	justify-content: center;
 }
 
+/* Titles look like those of Bases' own cards */
 .board-card .card-prop.clickable {
-	text-decoration: underline;
+	font-weight: calc(var(--font-weight) + var(--bold-modifier));
 	cursor: pointer;
+}
+
+.board-card-open:hover .card-prop.clickable,
+.board-card .card-prop.clickable.board-card-open:hover {
+	text-decoration: underline;
 }
 
 .board-row-wrapper.collapsed .board-row {
@@ -438,25 +505,32 @@
 }
 
 /* PropertyView Styles */
+/* The icon opens the title's first line, so wrapped lines use the full width. */
 .board-card-file-name-container {
-	display: flex;
-	align-items: center;
-	padding-left: 6px;
+	display: block;
+	padding-inline: var(--board-card-inset);
 }
 
 .board-card-icon {
-	margin-right: 5px;
 	display: inline-flex;
-	align-items: center;
+	vertical-align: middle;
+	/* Centred on capital letters rather than lowercase ones, like the title reads */
+	position: relative;
+	top: calc((1ex - 1cap) / 2);
+	margin-inline-end: 5px;
 }
 
-.board-card-file-name {
+.board-card .board-card-file-name {
+	display: inline;
 	text-decoration: none;
 }
 
-.board-card-file-name-no-icon {
+/* As tall as a title with an icon, whose text is inline */
+.board-card .board-card-file-name-no-icon {
+	display: block;
+	min-height: 0;
 	text-decoration: none;
-	padding-left: 6px;
+	padding-inline: var(--board-card-inset);
 }
 
 .board-card-open {
@@ -471,13 +545,13 @@
 
 .card-id {
 	display: block;
-	padding: 0 0 0 6px;
+	padding: 0 var(--board-card-inset);
 	font-size: var(--font-ui-smaller);
 	cursor: pointer;
 	user-select: none;
 	color: var(--text-muted);
 	font-family: inherit;
-	text-align: left;
+	text-align: start;
 }
 
 .board-id-edit-modal {
@@ -595,7 +669,7 @@
 }
 
 .board-view button.card-id {
-	padding: 0 0 0 6px;
+	padding: 0 var(--board-card-inset);
 }
 
 .board-view button.board-row-collapse {
@@ -606,6 +680,7 @@
 .board-row-collapse:focus-visible,
 .board-new-note-button:focus-visible,
 .card-id:focus-visible,
+.board-card [data-board-property]:focus-visible,
 .icon-picker-item:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
