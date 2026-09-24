@@ -98,7 +98,7 @@ npm run build
 ### How to release
 
 ```bash
-# Bump version, commit, create vX.Y.Z tag, and push automatically
+# Bump version, commit, create X.Y.Z tag, and push automatically
 npm version patch    # 1.0.3 → 1.0.4
 # or:
 npm version minor    # 1.0.3 → 1.1.0
@@ -108,14 +108,14 @@ npm version major    # 1.0.3 → 2.0.0
 What happens under the hood:
 
 1. `npm version` bumps `package.json`, then runs `version` script which updates `manifest.json` and `versions.json`, and stages both.
-2. npm commits everything and creates a `vX.Y.Z` git tag.
+2. npm commits everything and creates an `X.Y.Z` git tag (`.npmrc` sets `tag-version-prefix=""`).
 3. `postversion` script automatically runs `git push origin main && git push origin --tags`.
-4. The GitHub Actions `release.yml` workflow triggers on the `v*.*.*` tag and publishes a GitHub Release with `main.js`, `styles.css`, and `manifest.json` as assets.
+4. The GitHub Actions `release.yml` workflow triggers on the `*.*.*` tag, checks that it equals the version in `manifest.json`, and publishes a GitHub Release with `main.js`, `styles.css`, and `manifest.json` as assets.
 
 ### Version format
 
 - Uses **SemVer** (`major.minor.patch`).
-- Tags always have `v` prefix (e.g. `v1.0.4`) — required for the release workflow to trigger.
+- Tags have no `v` prefix (e.g. `1.0.7`), as Obsidian expects. The release workflow rejects a tag that differs from the manifest version.
 - `versions.json` maps plugin version → minimum Obsidian app version. Update `minAppVersion` in `manifest.json` when using newer Obsidian APIs.
 
 ## Security, privacy, and compliance

@@ -23,3 +23,6 @@ data.json
 
 # Test coverage
 coverage/
+
+# Dev vault
+dev-vault-board/
