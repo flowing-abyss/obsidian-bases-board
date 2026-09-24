@@ -118,7 +118,7 @@ export function renderPropertyEditor(
 					});
 			},
 		});
-		return (editor ?? {}) as PropertyEditor;
+		return editor ?? {};
 	} catch (error) {
 		// One report is enough when an Obsidian update changes the widgets
 		if (!reportedFailure) {
