@@ -754,8 +754,13 @@ describe('BoardView drag isolation', () => {
 		data.items = { todo: { default: [] } };
 		board.render(data, createCallbacks());
 		const cell = scroller.querySelector<HTMLElement>('.board-cell');
+		const header = scroller.querySelector<HTMLElement>('.board-column-headers');
 		const options = sortableCreate.mock.calls[0]?.[1];
-		if (!cell || !options) throw new Error('Expected BoardView to render a sortable cell');
+		if (!cell || !header || !options) {
+			throw new Error('Expected BoardView to render a sortable cell');
+		}
+		// The column headers stick over the top of the scroller
+		vi.spyOn(header, 'getBoundingClientRect').mockReturnValue(rect(0, 40));
 		const source = document.body.createDiv('board-cell');
 		const card = cell.createDiv('board-card');
 		const cardTop = vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(rect(600, 100));
@@ -777,7 +782,7 @@ describe('BoardView drag isolation', () => {
 		cardTop.mockReturnValue(rect(-150, 100));
 		enterCell();
 		vi.advanceTimersByTime(250);
-		expect(scrollBy).toHaveBeenCalledWith(expect.objectContaining({ top: -158 }));
+		expect(scrollBy).toHaveBeenCalledWith(expect.objectContaining({ top: -198 }));
 
 		// A card that is already visible, or a drag that ends first, keeps the scroll
 		scrollBy.mockClear();
@@ -792,6 +797,28 @@ describe('BoardView drag isolation', () => {
 		expect(scrollBy).not.toHaveBeenCalled();
 		board.destroy();
 		vi.useRealTimers();
+	});
+
+	it('measures sticky headers of the rendered board only', () => {
+		const observers: { disconnect: ReturnType<typeof vi.fn> }[] = [];
+		vi.stubGlobal(
+			'ResizeObserver',
+			class {
+				observe = vi.fn();
+				disconnect = vi.fn();
+				constructor() {
+					observers.push(this);
+				}
+			},
+		);
+		const board = new BoardView(document.body.createDiv());
+		board.render(createData(), createCallbacks());
+		board.render(createData(), createCallbacks());
+		expect(observers[0]?.disconnect).toHaveBeenCalled();
+		expect(observers[1]?.disconnect).not.toHaveBeenCalled();
+		board.destroy();
+		expect(observers[1]?.disconnect).toHaveBeenCalled();
+		vi.unstubAllGlobals();
 	});
 
 	it('preserves a null raw value when moving into the empty-value column', async () => {

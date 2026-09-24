@@ -8,6 +8,7 @@ import { ColorManager } from './ColorManager';
 import { BoardOptions } from './OptionsExtractor';
 import { PROPERTY_EDITOR_CLASS } from './PropertyEditor';
 import { focusPropertyRow } from './PropertyView';
+import { StickyHeaders } from './StickyHeaders';
 
 export interface BoardItem {
 	id: string;
@@ -144,6 +145,7 @@ export class BoardView {
 	private verticalAutoScrollSampleTime = 0;
 	private verticalAutoScrollPreviousFrameTime: number | null = null;
 	private verticalAutoScrollContainer: HTMLElement | null = null;
+	private readonly stickyHeaders = new StickyHeaders();
 	private disposed = false;
 	private readonly stopExternalAutoScrollInsideSortableCell = (event: DragEvent): void => {
 		if (this.documentDragState.activeBoards.size === 0) return;
@@ -367,6 +369,7 @@ export class BoardView {
 		this.coverVideos = undefined;
 		if (cardFocus) this.restoreCardFocus(wrapper, cardFocus);
 		this.scheduleLinkCompatibilityPass(wrapper);
+		this.stickyHeaders.track(wrapper);
 	}
 
 	// A render right after an edit would otherwise leave keyboard focus on a removed
@@ -721,6 +724,7 @@ export class BoardView {
 		this.destroySortables();
 		this.pendingRender = null;
 		this.cancelLinkCompatibilityPass();
+		this.stickyHeaders.destroy();
 		this.clearOrphanedDragArtifacts();
 		this.container.empty();
 	}
@@ -941,12 +945,18 @@ export class BoardView {
 		if (!scroller) return;
 
 		const view = scroller.getBoundingClientRect();
-		// Column headers stick to the top of the board's own scroller
-		const header = scroller.matches('.board-board-wrapper')
-			? scroller.querySelector(':scope > .board-column-headers')
-			: null;
-		const top =
-			view.top + (header?.getBoundingClientRect().height ?? 0) + REVEAL_DROP_MARGIN_PX;
+		// Column headers and the header of the card's row stick to the top of the view
+		const header = card
+			.closest('.board-board-wrapper')
+			?.querySelector(':scope > .board-column-headers');
+		const rowHeader = card
+			.closest('.board-row-wrapper')
+			?.querySelector(':scope > .board-row-header-bar');
+		const covered = [header, rowHeader].reduce(
+			(height, el) => height + (el?.getBoundingClientRect().height ?? 0),
+			0,
+		);
+		const top = view.top + covered + REVEAL_DROP_MARGIN_PX;
 		const bottom = view.bottom - REVEAL_DROP_MARGIN_PX;
 		const target = card.getBoundingClientRect();
 		let delta = 0;

@@ -34,10 +34,14 @@
 	gap: 6px;
 	margin-bottom: 8px;
 	flex-shrink: 0;
+	/* As wide as the columns, so its background still covers them when scrolled sideways */
+	min-width: max-content;
 	position: sticky;
 	top: 0;
 	z-index: 5;
 	background: var(--background-primary);
+	/* It sticks below the board's padding, which would show cards passing above it */
+	box-shadow: 0 -12px 0 12px var(--background-primary);
 }
 
 .board-column-header-spacer {
@@ -142,7 +146,6 @@
 	/* Override for row headers - position inline instead of absolute */
 	position: relative;
 	right: auto;
-	margin-left: 4px;
 }
 
 .board-header-menu:hover {
@@ -150,7 +153,7 @@
 }
 
 .board-column-header:hover .board-header-menu,
-.board-row-header-bar:hover .board-header-menu,
+.board-row-header-bar:has(> :hover) .board-header-menu,
 .board-header-menu:focus-visible {
 	opacity: 1;
 }
@@ -161,6 +164,8 @@
 	margin-bottom: 12px;
 }
 
+/* A band across the board that sticks below the column headers while its row scrolls
+   past, so cards pass under it */
 .board-row-header-bar {
 	display: flex;
 	align-items: center;
@@ -168,11 +173,51 @@
 	user-select: none;
 	padding: 4px 8px;
 	font-weight: 600;
-	position: relative;
-	/* Align with card columns - no left margin needed as we'll position within row-wrapper */
-	width: fit-content;
+	position: sticky;
+	top: var(--board-column-headers-height, 0px);
+	z-index: 4;
+	background: var(--background-primary);
+	/* Closes the subpixel seam below the column headers */
+	box-shadow: 0 -1px 0 var(--background-primary);
+	/* A long title runs past the band rather than widening it beyond the columns */
+	contain: inline-size;
 	font-size: var(--font-ui-small);
 	padding-left: 0px;
+}
+
+/* Embedded in a note, the board scrolls with the note, out of reach of sticky
+   positioning. Its headers follow the note's scroll instead, between the shares of the
+   embed that StickyHeaders measures. The shares sit in the easing because Chromium keeps
+   the old start of an animation range that changes before the animation first runs. */
+@supports (animation-timeline: --board-embed) {
+	:is(.markdown-source-view, .markdown-preview-view)
+		:is(.bases-embed, .block-language-base):has(.board-view) {
+		view-timeline: --board-embed block;
+	}
+
+	:is(.markdown-source-view, .markdown-preview-view)
+		:is(.bases-embed, .block-language-base)
+		:is(.board-column-headers, .board-row-header-bar) {
+		animation: board-follow-scroll both;
+		animation-timeline: --board-embed;
+		animation-range: exit-crossing;
+		animation-timing-function: linear(
+			0,
+			0 var(--board-sticky-from, 0%),
+			1 var(--board-sticky-to, 0%),
+			1
+		);
+	}
+}
+
+@keyframes board-follow-scroll {
+	from {
+		translate: 0 0;
+	}
+
+	to {
+		translate: 0 var(--board-sticky-travel, 0px);
+	}
 }
 
 .board-row-collapse {
@@ -447,6 +492,11 @@
 	flex: 1;
 }
 
+/* As wide as the columns, so row headers span the board and end where it ends */
+.board-rows-container:not(.is-gallery) {
+	width: max-content;
+}
+
 .board-rows-container.is-gallery {
 	flex-direction: column;
 	/* Keep rows stacked vertically */
@@ -672,8 +722,10 @@
 	padding: 0 var(--board-card-inset);
 }
 
+/* The space before the menu belongs to the title, so the menu stays shown on the way */
 .board-view button.board-row-collapse {
 	padding: 0;
+	padding-inline-end: 4px;
 }
 
 .board-header-menu:focus-visible,
