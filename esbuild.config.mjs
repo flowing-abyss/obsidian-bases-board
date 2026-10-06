@@ -27,8 +27,7 @@ const context = await esbuild.context({
 		'@codemirror/search',
 		'@codemirror/state',
 		'@codemirror/view',
-		'@lezer/common',
-		'@lezer/highlight',
+		// Bundle the Markdown parser's Lezer dependencies to support older hosts.
 		'@lezer/lr',
 		...builtinModules,
 	],

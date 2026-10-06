@@ -8,8 +8,8 @@ export const BoardOptionKeys = {
 	IMAGE_PROPERTY: 'imageProperty',
 	ICON_PROPERTY: 'iconProperty',
 	ID_PROPERTY: 'idProperty',
-	GROUP_ORDER: 'groupOrder',
-	SUB_GROUP_ORDER: 'subGroupOrder',
+	COLUMN_ORDER: 'columnOrder',
+	ROW_ORDER: 'rowOrder',
 	GROUP_LABELS: 'groupLabels',
 	SUB_GROUP_LABELS: 'subGroupLabels',
 	HIDE_EMPTY_GROUPS: 'hideEmptyGroups',
@@ -39,8 +39,8 @@ export interface BoardOptions {
 	imageProperty?: BasesPropertyId | null;
 	iconProperty?: BasesPropertyId | null;
 	idProperty?: BasesPropertyId | null;
-	groupOrder?: string[];
-	subGroupOrder?: string[];
+	columnOrder?: string[];
+	rowOrder?: string[];
 	groupLabels?: Record<string, string>;
 	subGroupLabels?: Record<string, string>;
 	hideEmptyGroups?: boolean;
@@ -76,6 +76,13 @@ function readStringArray(value: unknown): string[] {
 
 function readGroupArray(value: unknown): string[] {
 	return readStringArray(value).map(normalizeGroupId);
+}
+
+function readOrder(config: BasesViewConfig, key: string, legacyKey: string): string[] {
+	const value = config.get(key);
+	const nativeOrder =
+		legacyKey === 'groupOrder' && 'groupBy' in config && Boolean(config.groupBy);
+	return readGroupArray(value === undefined && !nativeOrder ? config.get(legacyKey) : value);
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
@@ -136,8 +143,8 @@ export class OptionsExtractor {
 		options.imageProperty = readPropertyId(this.config.get(BoardOptionKeys.IMAGE_PROPERTY));
 		options.iconProperty = readPropertyId(this.config.get(BoardOptionKeys.ICON_PROPERTY));
 		options.idProperty = readPropertyId(this.config.get(BoardOptionKeys.ID_PROPERTY));
-		options.groupOrder = readGroupArray(this.config.get(BoardOptionKeys.GROUP_ORDER));
-		options.subGroupOrder = readGroupArray(this.config.get(BoardOptionKeys.SUB_GROUP_ORDER));
+		options.columnOrder = readOrder(this.config, BoardOptionKeys.COLUMN_ORDER, 'groupOrder');
+		options.rowOrder = readOrder(this.config, BoardOptionKeys.ROW_ORDER, 'subGroupOrder');
 		options.groupLabels = parseLabels(
 			readStringArray(this.config.get(BoardOptionKeys.GROUP_LABELS)),
 		);

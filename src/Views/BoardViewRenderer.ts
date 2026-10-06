@@ -5,6 +5,7 @@ import { BasesView, Modal, Notice, QueryController } from 'obsidian';
 import { BoardViewDataBuilder } from './BoardDataBuilder';
 import { BoardNoteCreator } from './BoardNoteCreator';
 import { BoardView, BoardViewCallbacks, BoardViewData } from './BoardView';
+import { NativeGroupMenu } from './NativeGroupMenu';
 import { BoardOptionKeys, BoardOptions, OptionsExtractor } from './OptionsExtractor';
 
 export class BoardViewRenderer extends BasesView {
@@ -13,9 +14,11 @@ export class BoardViewRenderer extends BasesView {
 	public controller: QueryController;
 	private board: BoardView;
 	private noteCreator: BoardNoteCreator;
+	private nativeGroupMenu: NativeGroupMenu;
 	constructor(controller: QueryController, parentEl: HTMLElement) {
 		super(controller);
 		this.controller = controller;
+		this.nativeGroupMenu = new NativeGroupMenu(controller);
 		this.containerEl = parentEl.createDiv('board-view');
 		const boardContainer = this.containerEl.createDiv('board-board-container');
 
@@ -24,6 +27,7 @@ export class BoardViewRenderer extends BasesView {
 		this.noteCreator = this.addChild(new BoardNoteCreator());
 		this.register(() => {
 			this.board.destroy();
+			this.nativeGroupMenu.destroy();
 		});
 	}
 
@@ -33,6 +37,7 @@ export class BoardViewRenderer extends BasesView {
 	}
 
 	render(): void {
+		this.nativeGroupMenu.update(this.config);
 		const options = this.extractOptions();
 		const boardData = this.extractBoardData(options);
 		boardData.collapsedSubGroups = options.collapsedSubGroups || [];
@@ -146,7 +151,7 @@ export class BoardViewRenderer extends BasesView {
 			}
 		}
 
-		this.config.set(BoardOptionKeys.GROUP_ORDER, newOrder);
+		this.config.set(BoardOptionKeys.COLUMN_ORDER, newOrder);
 	}
 
 	private moveSubGroup(subGroupValue: string, direction: 'up' | 'down') {
@@ -169,7 +174,7 @@ export class BoardViewRenderer extends BasesView {
 			}
 		}
 
-		this.config.set(BoardOptionKeys.SUB_GROUP_ORDER, newOrder);
+		this.config.set(BoardOptionKeys.ROW_ORDER, newOrder);
 	}
 
 	private async setColumnColor(groupValue: string, color: string, isSubGroup = false) {

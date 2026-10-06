@@ -3,6 +3,7 @@ import { Plugin, QueryController } from 'obsidian';
 import { BoardViewRenderer } from 'Views/BoardViewRenderer';
 import { IconPickerModal } from 'Views/IconPickerModal';
 import { BoardOptionKeys } from 'Views/OptionsExtractor';
+import { OrderMigration } from './Base/OrderMigration';
 import Services from './Base/Services';
 
 export const BASES_VIEW_ID = 'board-view';
@@ -16,6 +17,7 @@ export default class BoardViewPlugin extends Plugin {
 
 		// Initialize services
 		Services.initialize(this);
+		await new OrderMigration(this).start();
 
 		// Icon picker command
 		this.addCommand({
@@ -129,7 +131,7 @@ export default class BoardViewPlugin extends Plugin {
 							key: BoardOptionKeys.HIDE_EMPTY_GROUPS,
 							default: false,
 							description:
-								'Hide groups with no cards. When off, groups from Group order are always shown',
+								'Hide groups with no cards. When off, groups from Column order are always shown',
 						},
 						{
 							type: 'multitext',
@@ -140,10 +142,10 @@ export default class BoardViewPlugin extends Plugin {
 						},
 						{
 							type: 'multitext',
-							displayName: 'Group order',
-							key: BoardOptionKeys.GROUP_ORDER,
+							displayName: 'Column order',
+							key: BoardOptionKeys.COLUMN_ORDER,
 							default: [],
-							description: 'Order of main group (columns)',
+							description: 'Order of columns',
 						},
 						{
 							type: 'multitext',
@@ -183,10 +185,10 @@ export default class BoardViewPlugin extends Plugin {
 						},
 						{
 							type: 'multitext',
-							displayName: 'Sub-group order',
-							key: BoardOptionKeys.SUB_GROUP_ORDER,
+							displayName: 'Row order',
+							key: BoardOptionKeys.ROW_ORDER,
 							default: [],
-							description: 'Order of sub group (rows)',
+							description: 'Order of rows',
 						},
 						{
 							type: 'multitext',

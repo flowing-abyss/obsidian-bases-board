@@ -1,5 +1,6 @@
 import { BasesViewConfig } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
+import { EMPTY_GROUP_ID } from '../src/Views/BoardConstants';
 import { BoardOptionKeys, OptionsExtractor } from '../src/Views/OptionsExtractor';
 
 function createConfig(values: Record<string, unknown> = {}): BasesViewConfig {
@@ -9,7 +10,59 @@ function createConfig(values: Record<string, unknown> = {}): BasesViewConfig {
 	} as unknown as BasesViewConfig;
 }
 
-describe('OptionsExtractor boolean defaults', () => {
+describe('OptionsExtractor', () => {
+	it('reads both migrated axes and preserves explicit empty orders', () => {
+		const options = new OptionsExtractor(
+			createConfig({
+				columnOrder: [],
+				groupOrder: ['Old'],
+				rowOrder: ['Bob', 'Empty Group'],
+				subGroupOrder: ['Alice'],
+			}),
+		).extract();
+		expect(options.columnOrder).toEqual([]);
+		expect(options.rowOrder).toEqual(['Bob', EMPTY_GROUP_ID]);
+	});
+
+	it('does not restore an old order after the new option is cleared', () => {
+		const options = new OptionsExtractor(
+			createConfig({ columnOrder: null, groupOrder: ['Old'] }),
+		).extract();
+		expect(options.columnOrder).toEqual([]);
+	});
+
+	it('can read legacy custom options while their source is being migrated', () => {
+		const options = new OptionsExtractor(
+			createConfig({
+				groupOrder: ['Todo', 'Done'],
+				subGroupOrder: ['Alice', 'Bob'],
+			}),
+		).extract();
+		expect(options.columnOrder).toEqual(['Todo', 'Done']);
+		expect(options.rowOrder).toEqual(['Alice', 'Bob']);
+	});
+
+	it('does not treat a native group filter as column names on older hosts', () => {
+		const config = Object.assign(
+			createConfig({ groupOrder: ['Alice'], subGroupOrder: ['Bob'] }),
+			{
+				groupBy: { property: 'note.owner', direction: 'ASC' },
+			},
+		);
+		const options = new OptionsExtractor(config).extract();
+		expect(options.columnOrder).toEqual([]);
+		expect(options.rowOrder).toEqual(['Bob']);
+	});
+
+	it('reads explicit Board order alongside a native group filter', () => {
+		const config = Object.assign(
+			createConfig({ columnOrder: ['Done', 'Todo'], groupOrder: ['Alice'] }),
+			{
+				groupBy: { property: 'note.owner', direction: 'ASC' },
+			},
+		);
+		expect(new OptionsExtractor(config).extract().columnOrder).toEqual(['Done', 'Todo']);
+	});
 	it('preserves explicit false values for options that default to true', () => {
 		const config = createConfig({
 			[BoardOptionKeys.COLOR_HEADERS]: false,

@@ -1,3 +1,9 @@
+.bases-toolbar-group-menu.board-hide-native-group,
+.bases-toolbar-menu.board-hide-native-group
+	.bases-toolbar-menu-item:has(.svg-icon.lucide-stretch-horizontal) {
+	display: none;
+}
+
 .board-view {
 	--board-view-column-width: 280px;
 	--board-view-column-width-small: 240px;

@@ -42,14 +42,14 @@ export class BoardViewDataBuilder {
 			groupValues,
 			groupPropertyId,
 			options.hideEmptyGroups,
-			options.groupOrder,
+			options.columnOrder,
 		);
 		if (subGroupPropertyId) {
 			this.addEmptyValues(
 				subGroupValues,
 				subGroupPropertyId,
 				options.hideEmptySubGroups,
-				options.subGroupOrder,
+				options.rowOrder,
 			);
 		}
 		this.createColumns(groupValues, hiddenGroups, options, columns, items);
@@ -182,7 +182,7 @@ export class BoardViewDataBuilder {
 		columns: BoardColumn[],
 		items: Record<string, Record<string, BoardItem[]>>,
 	): void {
-		for (const key of this.sortGroups([...values.keys()], options.groupOrder)) {
+		for (const key of this.sortGroups([...values.keys()], options.columnOrder)) {
 			if (!hiddenGroups.has(key)) {
 				columns.push({
 					id: key,
@@ -203,7 +203,7 @@ export class BoardViewDataBuilder {
 		options: BoardOptions,
 		rows: BoardRow[],
 	): void {
-		for (const key of this.sortGroups([...values.keys()], options.subGroupOrder)) {
+		for (const key of this.sortGroups([...values.keys()], options.rowOrder)) {
 			if (!hiddenGroups.has(key)) {
 				rows.push({
 					id: key,

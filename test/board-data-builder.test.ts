@@ -6,6 +6,37 @@ import { EMPTY_GROUP_ID } from '../src/Views/BoardConstants';
 import { BoardViewDataBuilder } from '../src/Views/BoardDataBuilder';
 
 describe('BoardViewDataBuilder empty states', () => {
+	it('keeps both axis orders, empty groups and newly discovered values', () => {
+		const app = App.createConfigured__({ files: { 'task.md': '' } });
+		Services.app = app.asOriginalType__();
+		Services.settings = { columnColors: {} };
+		const entry = BasesEntry.create__({}, app.vault.getFileByPath('task.md')!);
+		entry.setValue__('note.status', StringValue.create__('New status').asOriginalType__());
+		entry.setValue__('note.owner', StringValue.create__('New owner').asOriginalType__());
+		const board = new BoardViewDataBuilder(
+			{ data: [entry.asOriginalType__()] } as unknown as BasesQueryResult,
+			{ getOrder: () => [], getSort: () => [] } as unknown as BasesViewConfig,
+		).build({
+			groupProperty: 'note.status',
+			subGroupProperty: 'note.owner',
+			columnOrder: ['Done', 'Todo', EMPTY_GROUP_ID],
+			rowOrder: ['Bob', 'Alice', EMPTY_GROUP_ID],
+		});
+		expect(board.columns.map((column) => column.id)).toEqual([
+			'Done',
+			'Todo',
+			EMPTY_GROUP_ID,
+			'New status',
+		]);
+		expect(board.rows.map((row) => row.id)).toEqual([
+			'Bob',
+			'Alice',
+			EMPTY_GROUP_ID,
+			'New owner',
+		]);
+		expect(board.items['New status']?.['New owner']).toHaveLength(1);
+	});
+
 	it('keeps a default column so an empty board can create its first note', () => {
 		Services.settings = { columnColors: {} };
 		const data = { data: [] } as unknown as BasesQueryResult;

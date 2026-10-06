@@ -49,7 +49,15 @@ To find icon names, run **Browse icons** from the command palette.
 - Reorder, hide and color them from the header menu.
 - Choose whether colors apply to headers, cells or cards.
 - Fold rows to hide their cards.
-- Keep empty columns on the board by listing them in **Group order**.
+- Keep empty columns on the board by listing them in **Column order**.
+- Set **Row order** to arrange sub-groups.
+
+In Board views, `groupOrder` is now `columnOrder` and `subGroupOrder` is `rowOrder`.
+Existing orders are migrated automatically in `.base` files and embedded `base`
+blocks, including files added later through sync.
+Board hides the native Group menu unless native grouping is already configured for
+that view, so existing group filters remain accessible. When a view has native
+`groupBy`, its `groupOrder` stays a native filter; set **Column order** separately.
 
 ## New notes
 
