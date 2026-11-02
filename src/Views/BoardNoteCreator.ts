@@ -101,7 +101,8 @@ export class BoardNoteCreator extends Component {
 			if (
 				error instanceof Error &&
 				error.name === 'MacroAbortError' &&
-				error.message === 'Input cancelled by user'
+				(error.message === 'Input cancelled by user' ||
+					error.message === 'One-page input cancelled by user')
 			)
 				return;
 			console.error('[BoardNoteCreator] QuickAdd choice failed', error);

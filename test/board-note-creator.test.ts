@@ -174,21 +174,30 @@ describe('BoardNoteCreator QuickAdd integration', () => {
 		expect(createFileForView).not.toHaveBeenCalled();
 	});
 
-	it('treats dismissing the QuickAdd form as cancellation', async () => {
-		const app = App.createConfigured__({ files: {} });
-		const cancellation = new Error('Input cancelled by user');
-		cancellation.name = 'MacroAbortError';
-		const executeChoice = vi.fn().mockRejectedValue(cancellation);
-		Services.app = Object.assign(app.asOriginalType__(), {
-			plugins: { getPlugin: () => ({ api: { executeChoice } }) },
-		});
-		const log = vi.spyOn(console, 'error');
+	it.each(['Input cancelled by user', 'One-page input cancelled by user'])(
+		'treats dismissing the QuickAdd form as cancellation: %s',
+		async (message) => {
+			const app = App.createConfigured__({ files: {} });
+			const cancellation = new Error(message);
+			cancellation.name = 'MacroAbortError';
+			const executeChoice = vi.fn().mockRejectedValue(cancellation);
+			Services.app = Object.assign(app.asOriginalType__(), {
+				plugins: { getPlugin: () => ({ api: { executeChoice } }) },
+			});
+			const log = vi.spyOn(console, 'error');
 
-		await new BoardNoteCreator().handleNewNoteClick('todo', undefined, 'note.status', null, {
-			newNoteQuickAddChoice: 'Create',
-		});
+			await new BoardNoteCreator().handleNewNoteClick(
+				'todo',
+				undefined,
+				'note.status',
+				null,
+				{
+					newNoteQuickAddChoice: 'Create',
+				},
+			);
 
-		expect(log).not.toHaveBeenCalled();
-		log.mockRestore();
-	});
+			expect(log).not.toHaveBeenCalled();
+			log.mockRestore();
+		},
+	);
 });
