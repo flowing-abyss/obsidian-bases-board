@@ -93,4 +93,12 @@ describe('OptionsExtractor', () => {
 
 		expect(new OptionsExtractor(config).extract().hideEmptyProperties).toBe(true);
 	});
+
+	it('reads the optional QuickAdd choice name', () => {
+		const config = createConfig({
+			[BoardOptionKeys.NEW_NOTE_QUICKADD_CHOICE]: ['  Add game  '],
+		});
+
+		expect(new OptionsExtractor(config).extract().newNoteQuickAddChoice).toBe('Add game');
+	});
 });

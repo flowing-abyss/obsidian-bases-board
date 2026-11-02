@@ -23,6 +23,7 @@ export const BoardOptionKeys = {
 	NEW_NOTE_FOLDER: 'newNoteFolder',
 	NEW_NOTE_TEMPLATE: 'newNoteTemplate',
 	NEW_NOTE_OPEN: 'newNoteOpen',
+	NEW_NOTE_QUICKADD_CHOICE: 'newNoteQuickAddChoice',
 
 	// Icon mapping
 	ICON_MAPPING: 'iconMapping',
@@ -54,6 +55,7 @@ export interface BoardOptions {
 	newNoteFolder?: string;
 	newNoteTemplate?: string;
 	newNoteOpen?: boolean;
+	newNoteQuickAddChoice?: string;
 
 	// Icon mapping: property value → lucide icon name
 	iconMapping?: Record<string, string>;
@@ -180,6 +182,9 @@ export class OptionsExtractor {
 		options.newNoteTemplate =
 			readStringArray(this.config.get(BoardOptionKeys.NEW_NOTE_TEMPLATE))[0] ?? '';
 		options.newNoteOpen = readBoolean(this.config.get(BoardOptionKeys.NEW_NOTE_OPEN), false);
+		options.newNoteQuickAddChoice =
+			readStringArray(this.config.get(BoardOptionKeys.NEW_NOTE_QUICKADD_CHOICE))[0]?.trim() ??
+			'';
 
 		options.iconMapping = parseLabels(
 			readStringArray(this.config.get(BoardOptionKeys.ICON_MAPPING)),

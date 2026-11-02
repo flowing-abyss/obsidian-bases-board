@@ -227,6 +227,14 @@ export default class BoardViewPlugin extends Plugin {
 					items: [
 						{
 							type: 'multitext',
+							displayName: 'QuickAdd choice',
+							key: BoardOptionKeys.NEW_NOTE_QUICKADD_CHOICE,
+							default: [],
+							description:
+								'Optional QuickAdd choice name. When set, Folder and Template are ignored.',
+						},
+						{
+							type: 'multitext',
 							displayName: 'Folder',
 							key: BoardOptionKeys.NEW_NOTE_FOLDER,
 							default: [],

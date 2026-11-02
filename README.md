@@ -65,6 +65,16 @@ The **New note** button in each cell creates a note with that cell's column and 
 values already set. Choose a **Folder** and a **Template** for new notes, including
 Templater templates.
 
+To use a [QuickAdd](https://github.com/chhoumann/quickadd) choice instead, enable
+QuickAdd and set **New note → QuickAdd choice** to the choice name. When configured,
+the choice handles note creation; Board's Folder, Template and Open settings are ignored.
+The column and row values are passed as QuickAdd variables named after their note
+properties. Reference those variables in your choice's template to use the cell values.
+For example, for a `status` row and a QuickAdd Template choice, use
+`{{VALUE:Todo,Doing,Done|name:status|label:Status}}` for the status property. Opening the
+choice outside the board still asks for a status. Empty groups and calculated or file
+properties are not passed as variables.
+
 ## Installation
 
 Open Settings → Community plugins, browse for **Bases Board**, then install and enable it.

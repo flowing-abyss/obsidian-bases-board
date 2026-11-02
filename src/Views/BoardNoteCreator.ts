@@ -8,6 +8,16 @@ type CreateFileForView = (
 	frontmatterProcessor: (frontmatter: Record<string, unknown>) => void,
 ) => Promise<void>;
 
+interface QuickAddPlugin {
+	api?: {
+		executeChoice(choice: string, variables: Record<string, unknown>): Promise<void>;
+	};
+}
+
+interface PluginRegistry {
+	getPlugin(id: string): unknown;
+}
+
 export class BoardNoteCreator extends Component {
 	private readonly pendingTemplateWaits = new Set<() => void>();
 
@@ -24,6 +34,23 @@ export class BoardNoteCreator extends Component {
 		options?: BoardOptions,
 		createFileForView?: CreateFileForView,
 	): Promise<void> {
+		const quickAddChoice = options?.newNoteQuickAddChoice;
+		if (quickAddChoice) {
+			const variables: Record<string, unknown> = Object.create(null) as Record<
+				string,
+				unknown
+			>;
+			this.assignGroupValuesToFrontmatter(
+				variables,
+				groupValue,
+				subGroupValue,
+				groupPropertyId,
+				subGroupPropertyId,
+			);
+			await this.runQuickAdd(quickAddChoice, variables);
+			return;
+		}
+
 		const folder = options?.newNoteFolder || '';
 		const template = options?.newNoteTemplate || '';
 
@@ -57,6 +84,28 @@ export class BoardNoteCreator extends Component {
 			});
 		} catch (error) {
 			console.error('[BoardNoteCreator] Failed to create note', error);
+		}
+	}
+
+	private async runQuickAdd(choice: string, variables: Record<string, unknown>): Promise<void> {
+		const app = Services.app as typeof Services.app & { plugins?: PluginRegistry };
+		const plugin = app.plugins?.getPlugin('quickadd') as QuickAddPlugin | undefined;
+		if (!plugin?.api || typeof plugin.api.executeChoice !== 'function') {
+			new Notice('Enable the configured note creation plugin to use this choice.');
+			return;
+		}
+
+		try {
+			await plugin.api.executeChoice(choice, variables);
+		} catch (error) {
+			if (
+				error instanceof Error &&
+				error.name === 'MacroAbortError' &&
+				error.message === 'Input cancelled by user'
+			)
+				return;
+			console.error('[BoardNoteCreator] QuickAdd choice failed', error);
+			new Notice('Could not run the configured note creation choice.');
 		}
 	}
 
@@ -206,6 +255,7 @@ export class BoardNoteCreator extends Component {
 	): void {
 		if (
 			isWritablePropertyId(groupPropertyId) &&
+			groupValue !== undefined &&
 			groupValue !== null &&
 			groupValue !== EMPTY_GROUP_ID
 		) {
