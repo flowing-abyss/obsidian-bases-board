@@ -65,6 +65,9 @@ The **New note** button in each cell creates a note with that cell's column and 
 values already set. Choose a **Folder** and a **Template** for new notes, including
 Templater templates.
 
+Right-click a card and choose **Delete file** to delete its underlying file. Obsidian's
+file deletion and trash settings apply.
+
 ## Installation
 
 Open Settings → Community plugins, browse for **Bases Board**, then install and enable it.

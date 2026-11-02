@@ -1,5 +1,5 @@
 import { setTooltip } from 'obsidian';
-import { App, BasesEntry, Value } from 'obsidian-test-mocks/obsidian';
+import { App, BasesEntry, Menu, Value } from 'obsidian-test-mocks/obsidian';
 import { describe, expect, it, vi } from 'vitest';
 import Services from '../src/Base/Services';
 import type { PropertyManager } from '../src/Data/PropertyManager';
@@ -346,6 +346,54 @@ describe('CardView navigation', () => {
 			'board-card',
 		);
 		card.remove();
+	});
+
+	it('deletes the selected card file through Obsidian’s file manager', async () => {
+		const app = App.createConfigured__({
+			files: { 'tasks/selected.md': '', 'tasks/other.md': '' },
+		});
+		Services.app = app.asOriginalType__();
+		const file = app.vault.getFileByPath('tasks/selected.md');
+		if (!file) throw new Error('Missing selected note');
+		const prompt = vi.spyOn(app.fileManager, 'promptForDeletion');
+		const trigger = vi.spyOn(app.workspace, 'trigger');
+		const entry = BasesEntry.create__({}, file);
+		const card = new CardView({ options: {}, properties: [] }).render(entry.asOriginalType__());
+
+		card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+		const menuArgument = trigger.mock.calls[0]?.[1];
+		if (!menuArgument) throw new Error('Missing file menu');
+		const menu = Menu.fromOriginalType2__(menuArgument as import('obsidian').Menu);
+		const deleteItem = menu.items__.find((item) => item.title__ === 'Delete file');
+		expect(deleteItem?.warning__).toBe(true);
+		expect(app.vault.getFileByPath(file.path)).not.toBeNull();
+		deleteItem?.onClick__?.(new MouseEvent('click'));
+
+		await vi.waitFor(() => expect(prompt).toHaveBeenCalledWith(file));
+		await vi.waitFor(() => expect(app.vault.getFileByPath(file.path)).toBeNull());
+		expect(app.vault.getFileByPath('tasks/other.md')).not.toBeNull();
+	});
+
+	it('leaves the file in place when deletion is canceled', async () => {
+		const app = App.createConfigured__({ files: { 'tasks/selected.md': '' } });
+		Services.app = app.asOriginalType__();
+		const file = app.vault.getFileByPath('tasks/selected.md');
+		if (!file) throw new Error('Missing selected note');
+		const prompt = vi.spyOn(app.fileManager, 'promptForDeletion').mockResolvedValue();
+		const trigger = vi.spyOn(app.workspace, 'trigger');
+		const entry = BasesEntry.create__({}, file);
+		const card = new CardView({ options: {}, properties: [] }).render(entry.asOriginalType__());
+
+		card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+		const menuArgument = trigger.mock.calls[0]?.[1];
+		if (!menuArgument) throw new Error('Missing file menu');
+		const menu = Menu.fromOriginalType2__(menuArgument as import('obsidian').Menu);
+		menu.items__
+			.find((item) => item.title__ === 'Delete file')
+			?.onClick__?.(new MouseEvent('click'));
+
+		await vi.waitFor(() => expect(prompt).toHaveBeenCalledWith(file));
+		expect(app.vault.getFileByPath(file.path)).not.toBeNull();
 	});
 });
 
