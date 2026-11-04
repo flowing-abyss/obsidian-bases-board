@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-bases-board",
-	"version": "1.2.1",
+	"version": "1.2.2",
 	"description": "Interactive board view for bases, use as Kanban or Gallery, with grouping for rows and columns.",
 	"main": "main.js",
 	"type": "module",
