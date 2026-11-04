@@ -140,6 +140,7 @@ export class BoardView {
 	private dragSessionId = 0;
 	private dragSettleScheduled = false;
 	private dragStarted = false;
+	private cancelChosenDrag: (() => void) | null = null;
 	private verticalAutoScrollFrame: number | null = null;
 	private verticalAutoScrollPointerY: number | null = null;
 	private verticalAutoScrollSampleTime = 0;
@@ -209,6 +210,7 @@ export class BoardView {
 	// Native context menus can consume pointerup and click, leaving the hold active.
 	private readonly releaseHoldForContextMenu = (): void => {
 		this.releasePointerHold?.();
+		this.cancelChosenDrag?.();
 	};
 	// Sortable cancels the browser's drop on the main window's document only, so in a
 	// popout the card's text would land in the field under the pointer
@@ -626,8 +628,18 @@ export class BoardView {
 				this.dragSettleScheduled = false;
 				this.dragStarted = false;
 				this.isDragging = true;
+				// A long press can open a menu before dragging starts. Destroying the
+				// chosen Sortable releases its document listeners and global selection.
+				this.cancelChosenDrag = () => {
+					sortable.destroy();
+					this.sortables = this.sortables.filter((instance) => instance !== sortable);
+					this.dragSessionId += 1;
+					this.finishDragState();
+					this.setupSortable(el, callbacks);
+				};
 			},
 			onStart: (evt) => {
+				this.cancelChosenDrag = null;
 				if (!this.isDragging) {
 					this.dragSessionId += 1;
 					this.dragSettleScheduled = false;
@@ -736,6 +748,7 @@ export class BoardView {
 	}
 
 	private finishDragState(): void {
+		this.cancelChosenDrag = null;
 		this.cancelRevealDrop();
 		this.isDragging = false;
 		this.dragStarted = false;

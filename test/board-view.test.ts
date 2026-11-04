@@ -511,6 +511,32 @@ describe('BoardView drag isolation', () => {
 		board.destroy();
 	});
 
+	it('keeps an active drag intact when a context menu opens', async () => {
+		const destroy = vi.fn();
+		sortableCreate.mockImplementationOnce(() => ({ destroy }));
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const callbacks = createCallbacks();
+		board.render(createData('Before drag'), callbacks);
+		const cell = container.querySelector<HTMLElement>('.board-cell');
+		if (!cell) throw new Error('Missing board cell');
+		const card = cell.createDiv('board-card');
+		const options = sortableCreate.mock.calls[0]?.[1];
+		const event = { from: cell, to: cell, item: card } as unknown as Sortable.SortableEvent;
+		options?.onChoose?.(event);
+		options?.onStart?.(event);
+		card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, button: 2 }));
+		board.render(createData('After drag'), callbacks);
+
+		expect(destroy).not.toHaveBeenCalled();
+		expect(container.textContent).toContain('Before drag');
+		options?.onEnd?.(event);
+		await Promise.resolve();
+		expect(container.textContent).toContain('After drag');
+		expect(callbacks.onCardDrop).not.toHaveBeenCalled();
+		board.destroy();
+	});
+
 	it('stops waiting for a click once the board is destroyed', () => {
 		const container = document.body.createDiv();
 		const board = new BoardView(container);
