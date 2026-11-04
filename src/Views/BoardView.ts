@@ -206,6 +206,10 @@ export class BoardView {
 		doc.addEventListener('click', release, true);
 		this.releasePointerHold = release;
 	};
+	// Native context menus can consume pointerup and click, leaving the hold active.
+	private readonly releaseHoldForContextMenu = (): void => {
+		this.releasePointerHold?.();
+	};
 	// Sortable cancels the browser's drop on the main window's document only, so in a
 	// popout the card's text would land in the field under the pointer
 	private readonly preventOwnedDrop = (event: DragEvent): void => {
@@ -226,6 +230,7 @@ export class BoardView {
 		// Captured blur, unlike focusout, still arrives when a widget rebuilds its field on blur
 		this.container.addEventListener('blur', this.renderAfterPropertyEdit, true);
 		this.container.addEventListener('pointerdown', this.holdRenderUntilClick, true);
+		this.container.addEventListener('contextmenu', this.releaseHoldForContextMenu, true);
 		this.container.addEventListener('drop', this.preventOwnedDrop, true);
 	}
 
@@ -716,6 +721,7 @@ export class BoardView {
 		this.container.removeEventListener('dragover', this.stopActiveNativeDragOverFromBubbling);
 		this.container.removeEventListener('blur', this.renderAfterPropertyEdit, true);
 		this.container.removeEventListener('pointerdown', this.holdRenderUntilClick, true);
+		this.container.removeEventListener('contextmenu', this.releaseHoldForContextMenu, true);
 		this.container.removeEventListener('drop', this.preventOwnedDrop, true);
 		this.releasePointerHold?.();
 		this.dragSessionId += 1;

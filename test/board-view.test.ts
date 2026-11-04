@@ -471,6 +471,46 @@ describe('BoardView drag isolation', () => {
 		vi.useRealTimers();
 	});
 
+	it.each([
+		{ pointerType: 'mouse', button: 2 },
+		{ pointerType: 'touch', button: 0 },
+	])(
+		'does not leave updates blocked after a $pointerType context menu',
+		({ pointerType, button }) => {
+			const container = document.body.createDiv();
+			const board = new BoardView(container);
+			const callbacks = createCallbacks();
+			board.render(createData('Before menu'), callbacks);
+
+			container.dispatchEvent(
+				new PointerEvent('pointerdown', { bubbles: true, pointerType, button }),
+			);
+			container.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, button: 2 }));
+			// A native context menu can consume pointerup and click, so neither follows.
+			board.render(createData('After menu'), callbacks);
+
+			expect(container.textContent).toContain('After menu');
+			board.destroy();
+		},
+	);
+
+	it('renders an update queued before a context menu opens', () => {
+		vi.useFakeTimers();
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const callbacks = createCallbacks();
+		board.render(createData('Before menu'), callbacks);
+
+		container.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 2 }));
+		board.render(createData('Queued update'), callbacks);
+		expect(container.textContent).toContain('Before menu');
+		container.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, button: 2 }));
+		vi.runOnlyPendingTimers();
+
+		expect(container.textContent).toContain('Queued update');
+		board.destroy();
+	});
+
 	it('stops waiting for a click once the board is destroyed', () => {
 		const container = document.body.createDiv();
 		const board = new BoardView(container);

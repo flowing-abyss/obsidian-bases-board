@@ -179,6 +179,21 @@ export class CardView {
 	private showFileMenu(entry: BasesEntry, x: number, y: number): void {
 		const menu = new Menu();
 		Services.app.workspace.trigger('file-menu', menu, entry.file, 'board-card');
+		menu.addItem((item) =>
+			item
+				.setSection('danger')
+				.setTitle('Delete file')
+				.setIcon('trash-2')
+				.setWarning(true)
+				.onClick(() => {
+					void Services.app.fileManager
+						.promptForDeletion(entry.file)
+						.catch((error: unknown) => {
+							console.error('[Bases Board] Failed to delete file', error);
+							new Notice('Could not delete the file.');
+						});
+				}),
+		);
 		menu.showAtPosition({ x, y });
 	}
 }
