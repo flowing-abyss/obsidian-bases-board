@@ -5,6 +5,8 @@ import { BasesView, Modal, Notice, QueryController } from 'obsidian';
 import { BoardViewDataBuilder } from './BoardDataBuilder';
 import { BoardNoteCreator } from './BoardNoteCreator';
 import { BoardView, BoardViewCallbacks, BoardViewData } from './BoardView';
+import { ManualOrderDrop } from './ManualOrder';
+import { writeManualOrderDrop } from './ManualOrderWriter';
 import { NativeGroupMenu } from './NativeGroupMenu';
 import { BoardOptionKeys, BoardOptions, OptionsExtractor } from './OptionsExtractor';
 
@@ -78,15 +80,17 @@ export class BoardViewRenderer extends BasesView {
 		groupPropertyValue?: string | null,
 		subGroupPropertyId?: string | null,
 		subGroupPropertyValue?: string | null,
+		order?: ManualOrderDrop,
 	) {
+		// A card reordered within its cell keeps its group values
+		if (order && !order.sourceIds) return writeManualOrderDrop(filePath, {}, order);
+
 		// If drop target has formula group, don't update frontmatter
 		if (groupPropertyId.startsWith('formula.') || subGroupPropertyId?.startsWith('formula.')) {
 			new Notice('Cannot drop card into formula group');
 			return;
 		}
 
-		const file = Services.propertyManager.getFile(filePath);
-		if (!file) return;
 		const updates: Record<string, unknown> = {};
 
 		if (groupPropertyId && groupPropertyValue !== undefined) {
@@ -99,6 +103,10 @@ export class BoardViewRenderer extends BasesView {
 			updates[subGroupPropertyKey] = subGroupPropertyValue;
 		}
 
+		if (order) return writeManualOrderDrop(filePath, updates, order);
+
+		const file = Services.propertyManager.getFile(filePath);
+		if (!file) return;
 		if (Object.keys(updates).length > 0) {
 			await Services.propertyManager.updateFrontmatterValues(file, updates);
 		}
