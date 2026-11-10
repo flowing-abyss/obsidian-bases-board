@@ -565,6 +565,9 @@ export class BoardView {
 				}
 				cardEl.setAttribute('data-item-id', item.id);
 				cardEl.setAttribute('data-board-owner', this.dragGroupName);
+				// Obsidian mobile opens a sidebar on a sideways swipe unless the touch starts on
+				// an element marked this way, so a card dragged sideways stays a drag
+				cardEl.setAttribute('data-ignore-swipe', 'true');
 				this.itemRanks.set(item.id, item.rank);
 
 				cell.appendChild(cardEl);

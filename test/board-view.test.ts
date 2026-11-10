@@ -1134,4 +1134,12 @@ describe('BoardView manual order', () => {
 		);
 		board.destroy();
 	});
+
+	it('keeps the mobile sidebar swipe off cards, with or without manual order', () => {
+		for (const orderPropertyId of [undefined, 'note.order']) {
+			const { board, todo, card } = renderBoard(orderPropertyId);
+			expect(card(todo, 'a.md').dataset.ignoreSwipe).toBe('true');
+			board.destroy();
+		}
+	});
 });
