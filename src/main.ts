@@ -1,5 +1,6 @@
 import { BoardViewSettings, DEFAULT_SETTINGS } from 'Base/Settings';
 import { Plugin, QueryController } from 'obsidian';
+import { isWritablePropertyId } from 'Utils';
 import { BoardViewRenderer } from 'Views/BoardViewRenderer';
 import { IconPickerModal } from 'Views/IconPickerModal';
 import { BoardOptionKeys } from 'Views/OptionsExtractor';
@@ -17,6 +18,12 @@ export default class BoardViewPlugin extends Plugin {
 
 		// Initialize services
 		Services.initialize(this);
+		// Lets the manual-order writer forget the values the cache now reports
+		this.registerEvent(
+			this.app.metadataCache.on('changed', (file, _data, cache) =>
+				Services.manualOrderWriter.onMetadataChanged(file.path, cache.frontmatter),
+			),
+		);
 		await new OrderMigration(this).start();
 
 		// Icon picker command
@@ -196,6 +203,21 @@ export default class BoardViewPlugin extends Plugin {
 							key: BoardOptionKeys.SUB_GROUP_LABELS,
 							default: [],
 							description: 'Custom display names for sub-groups, format: value=Label',
+						},
+					],
+				},
+				{
+					type: 'group',
+					displayName: 'Order',
+					items: [
+						{
+							type: 'property',
+							displayName: 'Order property',
+							key: BoardOptionKeys.ORDER_PROPERTY,
+							filter: (prop: string) => isWritablePropertyId(prop),
+							default: '',
+							description:
+								'Numeric note property set by dragging cards. Sort the view by it, ascending, to reorder cards within a cell.',
 						},
 					],
 				},

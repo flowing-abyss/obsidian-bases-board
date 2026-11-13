@@ -181,4 +181,33 @@ describe('BoardViewDataBuilder empty states', () => {
 			]).dropPlacement,
 		).toBe('first');
 	});
+
+	it('enables manual order only while the view sorts by the order property, ascending', () => {
+		Services.settings = { columnColors: {} };
+		type Sort = { property: string; direction: 'ASC' | 'DESC' }[];
+		const orderProperty = (sort: Sort, option: string | null = 'note.rank') =>
+			new BoardViewDataBuilder(
+				{ data: [] } as unknown as BasesQueryResult,
+				{ getOrder: () => [], getSort: () => sort } as unknown as BasesViewConfig,
+			).build({
+				groupProperty: 'note.status',
+				subGroupProperty: 'note.owner',
+				orderProperty: option as never,
+			}).orderPropertyId;
+		const asc = (property: string) => ({ property, direction: 'ASC' as const });
+
+		expect(orderProperty([asc('note.rank'), asc('file.name')])).toBe('note.rank');
+		// Group keys never order a cell, so they may come first
+		expect(orderProperty([asc('note.status'), asc('note.owner'), asc('note.rank')])).toBe(
+			'note.rank',
+		);
+		expect(orderProperty([{ property: 'note.rank', direction: 'DESC' }])).toBeNull();
+		expect(orderProperty([asc('file.name')])).toBeNull();
+		expect(orderProperty([asc('file.name'), asc('note.rank')])).toBeNull();
+		expect(orderProperty([])).toBeNull();
+		expect(orderProperty([asc('note.rank')], null)).toBeNull();
+
+		// A hand-written order property that is not a note property cannot be written
+		expect(orderProperty([asc('formula.rank')], 'formula.rank')).toBeNull();
+	});
 });

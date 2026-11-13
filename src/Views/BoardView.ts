@@ -5,6 +5,7 @@ import { EMPTY_GROUP_ID } from './BoardConstants';
 import { collectCoverVideos, CoverVideos } from './CardCover';
 import { CardView } from './CardView';
 import { ColorManager } from './ColorManager';
+import { collectCellOrder, ManualOrderDrop } from './ManualOrder';
 import { BoardOptions } from './OptionsExtractor';
 import { PROPERTY_EDITOR_CLASS } from './PropertyEditor';
 import { focusPropertyRow } from './PropertyView';
@@ -45,6 +46,8 @@ export interface BoardViewData {
 	collapsedSubGroups: string[];
 	// Where a card dropped into another cell will land once the base re-sorts
 	dropPlacement: 'sorted' | 'first' | 'last';
+	// When set, the pointer places a dropped card and the drop renumbers its cells
+	orderPropertyId?: string | null;
 }
 
 export interface BoardViewCallbacks {
@@ -54,6 +57,7 @@ export interface BoardViewCallbacks {
 		groupPropertyValue?: string | null,
 		subGroupPropertyId?: string | null,
 		subGroupPropertyValue?: string | null,
+		order?: ManualOrderDrop,
 	) => Promise<void>;
 	onHideGroup: (groupValue: string) => void;
 	onHideSubGroup: (subGroupValue: string) => void;
@@ -78,6 +82,7 @@ interface CardDropPayload {
 	groupValue: string | null | undefined;
 	subGroupPropertyId?: string | null;
 	subGroupValue: string | null | undefined;
+	order?: ManualOrderDrop;
 }
 
 const COLUMN_COLORS = ColorManager.getColorNames().map(
@@ -560,6 +565,9 @@ export class BoardView {
 				}
 				cardEl.setAttribute('data-item-id', item.id);
 				cardEl.setAttribute('data-board-owner', this.dragGroupName);
+				// Obsidian mobile opens a sidebar on a sideways swipe unless the touch starts on
+				// an element marked this way, so a card dragged sideways stays a drag
+				cardEl.setAttribute('data-ignore-swipe', 'true');
 				this.itemRanks.set(item.id, item.rank);
 
 				cell.appendChild(cardEl);
@@ -601,6 +609,7 @@ export class BoardView {
 		const reduceMotion =
 			el.ownerDocument.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)')
 				.matches ?? false;
+		const orderPropertyId = this.data.orderPropertyId;
 		const sortable = Sortable.create(el, {
 			group: {
 				name: this.dragGroupName,
@@ -609,15 +618,16 @@ export class BoardView {
 			},
 			animation: reduceMotion ? 0 : 150,
 			draggable: '.board-card',
-			sort: false, // Disable sorting to prevent items from shifting
+			// With a manual order the pointer places the card
+			sort: !!orderPropertyId,
 			filter: DRAG_FILTER_SELECTOR,
 			preventOnFilter: false,
-			// In another cell the base's sort decides the card's place, not the pointer.
-			// Sortable inserts the card on entry, onChange moves it to that place, and
-			// onMove keeps it there while the pointer moves inside the cell.
-			onMove: (evt) => evt.dragged.parentElement !== evt.to,
+			// Otherwise, in another cell the base's sort decides the card's place, not the
+			// pointer. Sortable inserts the card on entry, onChange moves it to that place,
+			// and onMove keeps it there while the pointer moves inside the cell.
+			onMove: (evt) => !!orderPropertyId || evt.dragged.parentElement !== evt.to,
 			onChange: (evt) => {
-				if (evt.from === evt.to) return;
+				if (orderPropertyId || evt.from === evt.to) return;
 				this.placeAtSortedPosition(evt.item, evt.to);
 				this.scheduleRevealDrop(evt.item, evt.to);
 			},
@@ -669,8 +679,11 @@ export class BoardView {
 			onEnd: (evt) => {
 				const sessionId = this.dragSessionId;
 				evt.from.classList.remove('board-drag-source');
+				const order = orderPropertyId
+					? this.getManualOrderDrop(evt, orderPropertyId)
+					: undefined;
 
-				if (evt.from === evt.to) {
+				if (evt.from === evt.to && !order) {
 					this.scheduleDragSettlement(sessionId, callbacks);
 					return;
 				}
@@ -696,12 +709,27 @@ export class BoardView {
 							| string
 							| null
 							| undefined,
+						order,
 					};
 				}
 				this.scheduleDragSettlement(sessionId, callbacks, payload);
 			},
 		});
 		this.sortables.push(sortable);
+	}
+
+	// Undefined when the card was dropped back at its place
+	private getManualOrderDrop(
+		evt: Sortable.SortableEvent,
+		propertyId: string,
+	): ManualOrderDrop | undefined {
+		const sameCell = evt.from === evt.to;
+		if (sameCell && evt.oldDraggableIndex === evt.newDraggableIndex) return undefined;
+		return {
+			propertyId,
+			targetIds: collectCellOrder(evt.to, evt.item),
+			sourceIds: sameCell ? null : collectCellOrder(evt.from, evt.item),
+		};
 	}
 
 	private addColorMenu(menu: Menu, onSelect: (colorName: string) => void): void {
@@ -873,6 +901,7 @@ export class BoardView {
 							payload.groupValue,
 							payload.subGroupPropertyId,
 							payload.subGroupValue,
+							payload.order,
 						),
 					)
 				: null;
