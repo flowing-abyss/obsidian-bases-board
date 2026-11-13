@@ -6,7 +6,6 @@ import { BoardViewDataBuilder } from './BoardDataBuilder';
 import { BoardNoteCreator } from './BoardNoteCreator';
 import { BoardView, BoardViewCallbacks, BoardViewData } from './BoardView';
 import { ManualOrderDrop } from './ManualOrder';
-import { writeManualOrderDrop } from './ManualOrderWriter';
 import { NativeGroupMenu } from './NativeGroupMenu';
 import { BoardOptionKeys, BoardOptions, OptionsExtractor } from './OptionsExtractor';
 
@@ -83,7 +82,7 @@ export class BoardViewRenderer extends BasesView {
 		order?: ManualOrderDrop,
 	) {
 		// A card reordered within its cell keeps its group values
-		if (order && !order.sourceIds) return writeManualOrderDrop(filePath, {}, order);
+		if (order && !order.sourceIds) return Services.manualOrderWriter.write(filePath, {}, order);
 
 		// If drop target has formula group, don't update frontmatter
 		if (groupPropertyId.startsWith('formula.') || subGroupPropertyId?.startsWith('formula.')) {
@@ -103,7 +102,7 @@ export class BoardViewRenderer extends BasesView {
 			updates[subGroupPropertyKey] = subGroupPropertyValue;
 		}
 
-		if (order) return writeManualOrderDrop(filePath, updates, order);
+		if (order) return Services.manualOrderWriter.write(filePath, updates, order);
 
 		const file = Services.propertyManager.getFile(filePath);
 		if (!file) return;

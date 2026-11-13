@@ -14,7 +14,7 @@ vi.mock('obsidian', async (importOriginal) => ({
 import Services from '../src/Base/Services';
 import { PropertyManager } from '../src/Data/PropertyManager';
 import { ManualOrderDrop } from '../src/Views/ManualOrder';
-import { writeManualOrderDrop } from '../src/Views/ManualOrderWriter';
+import { ManualOrderWriter } from '../src/Views/ManualOrderWriter';
 
 type Notes = Record<string, Record<string, unknown>>;
 
@@ -42,9 +42,11 @@ function setUpVault(notes: Notes, cached: Notes = notes) {
 const writtenPaths = (processFrontMatter: ReturnType<typeof setUpVault>) =>
 	processFrontMatter.mock.calls.map(([file]) => file.path);
 
-describe('writeManualOrderDrop', () => {
+describe('ManualOrderWriter', () => {
+	let writer: ManualOrderWriter;
 	beforeEach(() => {
 		notices.length = 0;
+		writer = new ManualOrderWriter();
 	});
 	afterEach(() => vi.restoreAllMocks());
 
@@ -64,7 +66,7 @@ describe('writeManualOrderDrop', () => {
 			sourceIds: ['b.md', 'c.md'],
 		};
 
-		await writeManualOrderDrop('a.md', { status: 'done' }, drop);
+		await writer.write('a.md', { status: 'done' }, drop);
 
 		expect(writtenPaths(processFrontMatter)[0]).toBe('a.md');
 		expect(writtenPaths(processFrontMatter).sort((a, b) => a.localeCompare(b))).toEqual([
@@ -93,7 +95,7 @@ describe('writeManualOrderDrop', () => {
 		const processFrontMatter = setUpVault(notes);
 		vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-		await writeManualOrderDrop(
+		await writer.write(
 			'a.md',
 			{ status: 'done' },
 			{ propertyId: 'note.order', targetIds: ['a.md', 'x.md'], sourceIds: ['b.md'] },
@@ -107,7 +109,7 @@ describe('writeManualOrderDrop', () => {
 	it('only writes to note properties', async () => {
 		const processFrontMatter = setUpVault({ 'a.md': {}, 'b.md': {} });
 
-		await writeManualOrderDrop(
+		await writer.write(
 			'a.md',
 			{},
 			{ propertyId: 'formula.rank', targetIds: ['b.md', 'a.md'], sourceIds: null },
@@ -123,7 +125,7 @@ describe('writeManualOrderDrop', () => {
 		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		await expect(
-			writeManualOrderDrop(
+			writer.write(
 				'a.md',
 				{ status: 'done' },
 				{ propertyId: 'note.order', targetIds: ['x.md', 'a.md'], sourceIds: [] },
@@ -149,7 +151,7 @@ describe('writeManualOrderDrop', () => {
 		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
 		await expect(
-			writeManualOrderDrop(
+			writer.write(
 				'c.md',
 				{},
 				{ propertyId: 'note.order', targetIds: ['c.md', 'a.md', 'b.md'], sourceIds: null },
@@ -158,5 +160,97 @@ describe('writeManualOrderDrop', () => {
 
 		expect(notes).toEqual({ 'a.md': { order: 2 }, 'b.md': { order: 2 }, 'c.md': { order: 1 } });
 		expect(error).toHaveBeenCalledWith(expect.any(String), ['b.md'], expect.any(Array));
+	});
+
+	const reorder = (itemId: string, targetIds: string[]) =>
+		writer.write(itemId, {}, { propertyId: 'note.order', targetIds, sourceIds: null });
+
+	it('plans the next drop from the values it wrote while the cache still lags', async () => {
+		const notes: Notes = { 'a.md': { order: 1 }, 'b.md': { order: 2 }, 'c.md': { order: 3 } };
+		// The cache never reports the writes
+		setUpVault(notes, structuredClone(notes));
+
+		await reorder('c.md', ['c.md', 'a.md', 'b.md']);
+		// The board still shows a, b, c
+		await reorder('b.md', ['b.md', 'a.md', 'c.md']);
+
+		expect(notes).toEqual({ 'a.md': { order: 2 }, 'b.md': { order: 1 }, 'c.md': { order: 3 } });
+	});
+
+	it('plans a drop only once the previous drop was written', async () => {
+		const notes: Notes = { 'a.md': { order: 1 }, 'b.md': { order: 2 }, 'c.md': { order: 3 } };
+		const processFrontMatter = setUpVault(notes, structuredClone(notes));
+		const write = processFrontMatter.getMockImplementation()!;
+		// Each write resolves on a later tick
+		processFrontMatter.mockImplementation((file, fn) =>
+			Promise.resolve().then(() => write(file, fn)),
+		);
+
+		await Promise.all([
+			reorder('c.md', ['c.md', 'a.md', 'b.md']),
+			reorder('b.md', ['b.md', 'a.md', 'c.md']),
+		]);
+
+		expect(notes).toEqual({ 'a.md': { order: 2 }, 'b.md': { order: 1 }, 'c.md': { order: 3 } });
+	});
+
+	it('plans from the cache again once it reported the written values', async () => {
+		const notes: Notes = { 'a.md': { order: 1 }, 'b.md': { order: 2 }, 'c.md': { order: 3 } };
+		const cached = structuredClone(notes);
+		const processFrontMatter = setUpVault(notes, cached);
+
+		await reorder('c.md', ['c.md', 'a.md', 'b.md']);
+		for (const path of Object.keys(notes)) {
+			cached[path] = structuredClone(notes[path]!);
+			writer.onMetadataChanged(path, cached[path]);
+		}
+		// Edited outside the board: c.md moves to the end
+		notes['c.md'] = { order: 9 };
+		cached['c.md'] = { order: 9 };
+		processFrontMatter.mockClear();
+
+		await reorder('c.md', ['c.md', 'a.md', 'b.md']);
+
+		expect(writtenPaths(processFrontMatter)).toEqual(['c.md']);
+		expect(notes).toEqual({ 'a.md': { order: 2 }, 'b.md': { order: 3 }, 'c.md': { order: 1 } });
+	});
+
+	it('keeps a written value the cache reports with an older value', async () => {
+		const notes: Notes = { 'a.md': { order: 1 }, 'b.md': { order: 2 } };
+		const cached = structuredClone(notes);
+		setUpVault(notes, cached);
+
+		await reorder('b.md', ['b.md', 'a.md']);
+		writer.onMetadataChanged('a.md', { order: 1 });
+		await reorder('a.md', ['a.md', 'b.md']);
+
+		expect(notes).toEqual({ 'a.md': { order: 1 }, 'b.md': { order: 2 } });
+	});
+
+	it('forgets a value it failed to write, and still writes the next drop', async () => {
+		const notes: Notes = { 'a.md': { order: 1 }, 'b.md': { order: 2 }, 'c.md': { order: 3 } };
+		const processFrontMatter = setUpVault(notes, structuredClone(notes));
+		const write = processFrontMatter.getMockImplementation()!;
+		processFrontMatter
+			.mockImplementationOnce(write)
+			.mockImplementationOnce((file, fn) =>
+				file.path === 'a.md' ? Promise.reject(new Error('locked')) : write(file, fn),
+			);
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		// Writes c.md, then a.md fails and b.md succeeds
+		await expect(reorder('c.md', ['c.md', 'a.md', 'b.md'])).rejects.toThrow(
+			'Failed to renumber 1 card(s)',
+		);
+		processFrontMatter.mockClear();
+		await reorder('b.md', ['b.md', 'a.md', 'c.md']);
+
+		// a.md is planned from the cache (1), not from the failed write (2)
+		expect(writtenPaths(processFrontMatter).sort((x, y) => x.localeCompare(y))).toEqual([
+			'a.md',
+			'b.md',
+			'c.md',
+		]);
+		expect(notes).toEqual({ 'a.md': { order: 2 }, 'b.md': { order: 1 }, 'c.md': { order: 3 } });
 	});
 });

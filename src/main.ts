@@ -18,6 +18,12 @@ export default class BoardViewPlugin extends Plugin {
 
 		// Initialize services
 		Services.initialize(this);
+		// Lets the manual-order writer forget the values the cache now reports
+		this.registerEvent(
+			this.app.metadataCache.on('changed', (file, _data, cache) =>
+				Services.manualOrderWriter.onMetadataChanged(file.path, cache.frontmatter),
+			),
+		);
 		await new OrderMigration(this).start();
 
 		// Icon picker command
