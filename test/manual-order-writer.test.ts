@@ -23,7 +23,12 @@ function setUpVault(notes: Notes, cached: Notes = notes) {
 	const processFrontMatter = vi.fn(
 		(file: { path: string }, fn: (fm: Record<string, unknown>) => void) => {
 			const frontmatter = structuredClone(notes[file.path] ?? {});
-			fn(frontmatter);
+			try {
+				fn(frontmatter);
+			} catch (error) {
+				// The callback cancelled the write: the note is left as it was
+				return Promise.reject(error as Error);
+			}
 			notes[file.path] = frontmatter;
 			return Promise.resolve();
 		},
@@ -39,8 +44,15 @@ function setUpVault(notes: Notes, cached: Notes = notes) {
 	return processFrontMatter;
 }
 
-const writtenPaths = (processFrontMatter: ReturnType<typeof setUpVault>) =>
+// Notes read for a write, written or not
+const calledPaths = (processFrontMatter: ReturnType<typeof setUpVault>) =>
 	processFrontMatter.mock.calls.map(([file]) => file.path);
+
+// Notes actually written: the callback ran to the end
+const writtenPaths = (processFrontMatter: ReturnType<typeof setUpVault>) =>
+	calledPaths(processFrontMatter).filter(
+		(_, index) => processFrontMatter.mock.settledResults[index]?.type === 'fulfilled',
+	);
 
 describe('ManualOrderWriter', () => {
 	let writer: ManualOrderWriter;
@@ -168,13 +180,22 @@ describe('ManualOrderWriter', () => {
 	it('plans the next drop from the values it wrote while the cache still lags', async () => {
 		const notes: Notes = { 'a.md': { order: 1 }, 'b.md': { order: 2 }, 'c.md': { order: 3 } };
 		// The cache never reports the writes
-		setUpVault(notes, structuredClone(notes));
+		const processFrontMatter = setUpVault(notes, structuredClone(notes));
 
 		await reorder('c.md', ['c.md', 'a.md', 'b.md']);
+		const noteA = notes['a.md'];
+		processFrontMatter.mockClear();
 		// The board still shows a, b, c
 		await reorder('b.md', ['b.md', 'a.md', 'c.md']);
 
 		expect(notes).toEqual({ 'a.md': { order: 2 }, 'b.md': { order: 1 }, 'c.md': { order: 3 } });
+		// a.md already holds 2: it is read, but not rewritten
+		expect(calledPaths(processFrontMatter)).toContain('a.md');
+		expect(writtenPaths(processFrontMatter).sort((x, y) => x.localeCompare(y))).toEqual([
+			'b.md',
+			'c.md',
+		]);
+		expect(notes['a.md']).toBe(noteA);
 	});
 
 	it('plans a drop only once the previous drop was written', async () => {
@@ -211,7 +232,8 @@ describe('ManualOrderWriter', () => {
 
 		await reorder('c.md', ['c.md', 'a.md', 'b.md']);
 
-		expect(writtenPaths(processFrontMatter)).toEqual(['c.md']);
+		// a.md and b.md are planned from the cache: not even read
+		expect(calledPaths(processFrontMatter)).toEqual(['c.md']);
 		expect(notes).toEqual({ 'a.md': { order: 2 }, 'b.md': { order: 3 }, 'c.md': { order: 1 } });
 	});
 
@@ -243,14 +265,30 @@ describe('ManualOrderWriter', () => {
 			'Failed to renumber 1 card(s)',
 		);
 		processFrontMatter.mockClear();
-		await reorder('b.md', ['b.md', 'a.md', 'c.md']);
+		await reorder('a.md', ['a.md', 'c.md', 'b.md']);
 
-		// a.md is planned from the cache (1), not from the failed write (2)
-		expect(writtenPaths(processFrontMatter).sort((x, y) => x.localeCompare(y))).toEqual([
-			'a.md',
+		// a.md is not remembered: planned from the cache (1), it is not even read
+		expect(calledPaths(processFrontMatter).sort((x, y) => x.localeCompare(y))).toEqual([
 			'b.md',
 			'c.md',
 		]);
-		expect(notes).toEqual({ 'a.md': { order: 2 }, 'b.md': { order: 1 }, 'c.md': { order: 3 } });
+		expect(writtenPaths(processFrontMatter)).toEqual(['c.md']);
+		expect(notes).toEqual({ 'a.md': { order: 1 }, 'b.md': { order: 3 }, 'c.md': { order: 2 } });
+	});
+
+	it('rewrites a remembered card that a sync moved before the cache reported the drop', async () => {
+		const notes: Notes = { 'a.md': { order: 1 }, 'b.md': { order: 2 }, 'c.md': { order: 3 } };
+		const cached = structuredClone(notes);
+		setUpVault(notes, cached);
+
+		await reorder('c.md', ['c.md', 'a.md', 'b.md']);
+		// A sync moves c.md to the end before the cache reported c.md = 1
+		notes['c.md'] = { order: 5 };
+		cached['c.md'] = { order: 5 };
+		writer.onMetadataChanged('c.md', { order: 5 });
+		// The user drags c.md to the front again
+		await reorder('c.md', ['c.md', 'a.md', 'b.md']);
+
+		expect(notes).toEqual({ 'a.md': { order: 2 }, 'b.md': { order: 3 }, 'c.md': { order: 1 } });
 	});
 });

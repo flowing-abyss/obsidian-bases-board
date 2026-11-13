@@ -4,17 +4,33 @@ import { Notice } from 'obsidian';
 import {
 	assertReplaceableOrderValue,
 	FrontmatterWrite,
+	isReplaceableOrderValue,
 	ManualOrderDrop,
 	planManualOrderDrop,
 } from './ManualOrder';
+
+// Cancels a write that would change nothing: processFrontMatter re-serializes the YAML,
+// so a callback that changes nothing still rewrites the file
+class UnchangedFrontmatter extends Error {}
+
+function holdsValues(
+	frontmatter: Readonly<Record<string, unknown>>,
+	values: Readonly<Record<string, unknown>>,
+): boolean {
+	return Object.entries(values).every(
+		([key, value]) => frontmatter[findFrontmatterKey(frontmatter, key)] === value,
+	);
+}
 
 /**
  * Writes manual-order drops. The dragged card is written first, in one frontmatter
  * transaction; the cells are renumbered only once it succeeded.
  *
  * The metadata cache lags behind our writes, so a drop planned from it alone could skip
- * a card whose new value the cache does not show yet. The writer remembers the order
- * values it wrote until the cache reports them, and plans from those first. Drops are
+ * a card whose new value the cache does not show yet. The writer remembers the cards it
+ * wrote until the cache reports their values; a remembered card is always planned, and
+ * its write is cancelled when the file already holds the value. A remembered entry that
+ * never clears only costs one file read when that card's cell is touched. Drops are
  * serialized so that each one is planned after the previous one's writes settled.
  */
 export class ManualOrderWriter {
@@ -57,8 +73,12 @@ export class ManualOrderWriter {
 		const orderKey = getPropertyKeyFromId(drop.propertyId);
 		const propertyManager = Services.propertyManager;
 		const plan = planManualOrderDrop(itemId, groupUpdates, drop, orderKey, (path) => {
-			const written = this.written.get(path)?.get(orderKey);
-			return written ?? propertyManager.getFrontmatterValue(path, orderKey);
+			const cached = propertyManager.getFrontmatterValue(path, orderKey);
+			if (!this.written.get(path)?.has(orderKey)) return cached;
+			// The cache may be stale for a card we wrote, and so may our value (a sync may
+			// have changed the file since): plan a write, checked against the file. A text
+			// value in the cache still cancels the drop.
+			return isReplaceableOrderValue(cached) ? undefined : cached;
 		});
 		if (!plan.ok) {
 			console.warn(
@@ -78,10 +98,12 @@ export class ManualOrderWriter {
 			// Recorded before writing: the cache may report the change before the write resolves
 			const restore = typeof order === 'number' ? this.remember(path, orderKey, order) : null;
 			try {
-				await propertyManager.updateFrontmatterValues(file, values, (frontmatter) =>
-					assertReplaceableOrderValue(frontmatter, orderKey),
-				);
+				await propertyManager.updateFrontmatterValues(file, values, (frontmatter) => {
+					assertReplaceableOrderValue(frontmatter, orderKey);
+					if (holdsValues(frontmatter, values)) throw new UnchangedFrontmatter();
+				});
 			} catch (error) {
+				if (error instanceof UnchangedFrontmatter) return;
 				restore?.();
 				throw error;
 			}
