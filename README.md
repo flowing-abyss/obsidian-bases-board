@@ -59,6 +59,19 @@ Board hides the native Group menu unless native grouping is already configured f
 that view, so existing group filters remain accessible. When a view has native
 `groupBy`, its `groupOrder` stays a native filter; set **Column order** separately.
 
+## Manual order
+
+Set **Order property** to a numeric note property, such as `order`, then sort the view
+by that property, ascending, to arrange cards by dragging them. Further sort keys break
+ties, and cards without a value come last. Group and sub-group keys may come first.
+With any other sort, dragging only changes a card's column and row, as usual.
+
+Dropping a card numbers its cell 1, 2, 3 and so on, and moving a card to another cell
+also renumbers the cell it left. Only notes whose number changes are written. The
+first drop in a cell numbers all of its cards, so a long cell can update many notes.
+A drop is cancelled, without changing any note, when a card in those cells holds a
+non-numeric value, including a number stored as text.
+
 ## New notes
 
 The **New note** button in each cell creates a note with that cell's column and row

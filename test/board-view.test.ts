@@ -692,6 +692,7 @@ describe('BoardView drag isolation', () => {
 			'done',
 			undefined,
 			null,
+			undefined,
 		);
 		board.destroy();
 	});
@@ -921,6 +922,7 @@ describe('BoardView drag isolation', () => {
 			null,
 			undefined,
 			null,
+			undefined,
 		);
 		board.destroy();
 	});
@@ -995,5 +997,149 @@ describe('BoardView drag isolation', () => {
 		expect(sortableCreate).toHaveBeenCalledTimes(1);
 		expect(callbacks.onCardDrop).not.toHaveBeenCalled();
 		board.destroy();
+	});
+});
+
+describe('BoardView manual order', () => {
+	beforeEach(() => sortableCreate.mockClear());
+
+	// Two columns: a, b and c wait in the first, x is in the second
+	function renderBoard(orderPropertyId?: string) {
+		const container = document.body.createDiv();
+		const board = new BoardView(container);
+		const callbacks = createCallbacks();
+		const data = createData();
+		data.groupPropertyId = 'note.status';
+		data.orderPropertyId = orderPropertyId;
+		data.columns = [
+			{ id: 'todo', title: 'Todo', rawValue: 'todo', count: 3 },
+			{ id: 'done', title: 'Done', rawValue: 'done', count: 1 },
+		];
+		const item = (id: string, groupId: string, rank: number) =>
+			({ id, groupId, rank, data: {} }) as BoardItem;
+		data.items = {
+			todo: {
+				default: [
+					item('a.md', 'todo', 0),
+					item('b.md', 'todo', 1),
+					item('c.md', 'todo', 2),
+				],
+			},
+			done: { default: [item('x.md', 'done', 3)] },
+		};
+		const cardView = vi
+			.spyOn(CardView.prototype, 'render')
+			.mockImplementation(() => createDiv('board-card'));
+		board.render(data, callbacks);
+		cardView.mockRestore();
+		const [todo, done] = Array.from(container.querySelectorAll<HTMLElement>('.board-cell'));
+		const options = sortableCreate.mock.calls[0]?.[1];
+		if (!todo || !done || !options) throw new Error('Expected two sortable cells');
+		const card = (cell: HTMLElement, id: string) => {
+			const el = cell.querySelector<HTMLElement>(`[data-item-id="${id}"]`);
+			if (!el) throw new Error(`Missing card ${id}`);
+			return el;
+		};
+		const end = (evt: Partial<Sortable.SortableEvent>) => {
+			options.onStart?.({ from: evt.from, item: evt.item } as Sortable.SortableEvent);
+			options.onEnd?.(evt as Sortable.SortableEvent);
+		};
+		return { board, callbacks, todo, done, options, card, end };
+	}
+
+	it('keeps sorted placement without an order property', () => {
+		const { board, todo, options, card } = renderBoard();
+		expect(options.sort).toBe(false);
+		const dragged = card(todo, 'a.md');
+		expect(
+			options.onMove?.(
+				{ dragged, to: todo } as unknown as Sortable.MoveEvent,
+				new Event('x'),
+			),
+		).toBe(false);
+		board.destroy();
+	});
+
+	it('lets the pointer place a card anywhere, in its cell or another', () => {
+		const { board, todo, done, options, card } = renderBoard('note.order');
+		expect(options.sort).toBe(true);
+		const dragged = card(done, 'x.md');
+		expect(
+			options.onMove?.(
+				{ dragged, to: done } as unknown as Sortable.MoveEvent,
+				new Event('x'),
+			),
+		).toBe(true);
+
+		// Entering another cell keeps the card where Sortable put it
+		todo.prepend(dragged);
+		options.onChange?.({ item: dragged, from: done, to: todo } as Sortable.SortableEvent);
+		expect(todo.querySelector('.board-card')).toBe(dragged);
+		board.destroy();
+	});
+
+	it('sends the new order of a cell after a reorder inside it', async () => {
+		const { board, callbacks, todo, card, end } = renderBoard('note.order');
+		const dragged = card(todo, 'c.md');
+		todo.prepend(dragged);
+		end({ from: todo, to: todo, item: dragged, oldDraggableIndex: 2, newDraggableIndex: 0 });
+
+		await vi.waitFor(() => expect(callbacks.onCardDrop).toHaveBeenCalledTimes(1));
+		expect(callbacks.onCardDrop).toHaveBeenCalledWith(
+			'c.md',
+			'note.status',
+			'todo',
+			undefined,
+			null,
+			{ propertyId: 'note.order', targetIds: ['c.md', 'a.md', 'b.md'], sourceIds: null },
+		);
+		board.destroy();
+	});
+
+	it('writes nothing when a card is dropped back at its place', async () => {
+		const { board, callbacks, todo, card, end } = renderBoard('note.order');
+		const dragged = card(todo, 'b.md');
+		end({ from: todo, to: todo, item: dragged, oldDraggableIndex: 1, newDraggableIndex: 1 });
+
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(callbacks.onCardDrop).not.toHaveBeenCalled();
+		board.destroy();
+	});
+
+	it('sends the order of both cells after a move between them', async () => {
+		const { board, callbacks, todo, done, card, end } = renderBoard('note.order');
+		const dragged = card(todo, 'b.md');
+		// Sortable leaves a copy of a cloned card in its source cell
+		const clone = dragged.cloneNode(true) as HTMLElement;
+		dragged.before(clone);
+		done.prepend(dragged);
+		end({
+			from: todo,
+			to: done,
+			item: dragged,
+			clone,
+			oldDraggableIndex: 1,
+			newDraggableIndex: 0,
+		});
+
+		await vi.waitFor(() => expect(callbacks.onCardDrop).toHaveBeenCalledTimes(1));
+		expect(callbacks.onCardDrop).toHaveBeenCalledWith(
+			'b.md',
+			'note.status',
+			'done',
+			undefined,
+			null,
+			{ propertyId: 'note.order', targetIds: ['b.md', 'x.md'], sourceIds: ['a.md', 'c.md'] },
+		);
+		board.destroy();
+	});
+
+	it('keeps the mobile sidebar swipe off cards, with or without manual order', () => {
+		for (const orderPropertyId of [undefined, 'note.order']) {
+			const { board, todo, card } = renderBoard(orderPropertyId);
+			expect(card(todo, 'a.md').dataset.ignoreSwipe).toBe('true');
+			board.destroy();
+		}
 	});
 });

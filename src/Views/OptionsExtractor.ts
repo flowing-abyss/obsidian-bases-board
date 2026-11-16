@@ -23,6 +23,7 @@ export const BoardOptionKeys = {
 	NEW_NOTE_FOLDER: 'newNoteFolder',
 	NEW_NOTE_TEMPLATE: 'newNoteTemplate',
 	NEW_NOTE_OPEN: 'newNoteOpen',
+	ORDER_PROPERTY: 'orderProperty',
 
 	// Icon mapping
 	ICON_MAPPING: 'iconMapping',
@@ -54,6 +55,8 @@ export interface BoardOptions {
 	newNoteFolder?: string;
 	newNoteTemplate?: string;
 	newNoteOpen?: boolean;
+	// Numeric note property that orders cards within a cell, set by dragging
+	orderProperty?: BasesPropertyId | null;
 
 	// Icon mapping: property value → lucide icon name
 	iconMapping?: Record<string, string>;
@@ -180,6 +183,7 @@ export class OptionsExtractor {
 		options.newNoteTemplate =
 			readStringArray(this.config.get(BoardOptionKeys.NEW_NOTE_TEMPLATE))[0] ?? '';
 		options.newNoteOpen = readBoolean(this.config.get(BoardOptionKeys.NEW_NOTE_OPEN), false);
+		options.orderProperty = readPropertyId(this.config.get(BoardOptionKeys.ORDER_PROPERTY));
 
 		options.iconMapping = parseLabels(
 			readStringArray(this.config.get(BoardOptionKeys.ICON_MAPPING)),

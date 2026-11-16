@@ -6,7 +6,7 @@ import {
 	BasesSortConfig,
 	BasesViewConfig,
 } from 'obsidian';
-import { findFrontmatterKey, getPropertyKeyFromId } from 'Utils';
+import { findFrontmatterKey, getPropertyKeyFromId, isWritablePropertyId } from 'Utils';
 import { compareEntries } from './BasesSort';
 import { EMPTY_GROUP_ID, EMPTY_GROUP_LABEL } from './BoardConstants';
 import { BoardColumn, BoardItem, BoardRow, BoardViewData } from './BoardView';
@@ -80,6 +80,7 @@ export class BoardViewDataBuilder {
 			columnColors: Services.settings.columnColors || {},
 			collapsedSubGroups: [],
 			dropPlacement: this.getDropPlacement(dropSort),
+			orderPropertyId: this.getManualOrderProperty(options.orderProperty, dropSort),
 		};
 	}
 
@@ -113,6 +114,19 @@ export class BoardViewDataBuilder {
 			.map(([index]) => index);
 		const ranks = new Map(order.map((index, rank) => [index, rank]));
 		return ranked.map(([index, entry]) => [ranks.get(index) ?? index, entry]);
+	}
+
+	// The view's sort decides the order shown, so dragging sets the order property only
+	// while that property, ascending, is the sort's first key within a cell. Only a note
+	// property can be written, so a formula or file property never enables manual mode
+	private getManualOrderProperty(
+		orderProperty: BasesPropertyId | null | undefined,
+		dropSort: DropSort,
+	): BasesPropertyId | null {
+		const [primary] = dropSort.keys;
+		if (!isWritablePropertyId(orderProperty) || primary?.property !== orderProperty)
+			return null;
+		return primary.direction === 'ASC' ? orderProperty : null;
 	}
 
 	// A drop writes to the note, which makes it the most recently modified one

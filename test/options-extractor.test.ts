@@ -93,4 +93,10 @@ describe('OptionsExtractor', () => {
 
 		expect(new OptionsExtractor(config).extract().hideEmptyProperties).toBe(true);
 	});
+
+	it('reads the order property, unset by default', () => {
+		expect(new OptionsExtractor(createConfig()).extract().orderProperty).toBeNull();
+		const config = createConfig({ [BoardOptionKeys.ORDER_PROPERTY]: 'note.order' });
+		expect(new OptionsExtractor(config).extract().orderProperty).toBe('note.order');
+	});
 });
